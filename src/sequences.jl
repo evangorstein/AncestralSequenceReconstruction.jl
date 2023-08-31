@@ -1,5 +1,5 @@
 const AA_ALPHABET = "-ACDEFGHIKLMNPQRSTVWY"
-const NT_ALPHABET = "-ACGT"
+const NT_ALPHABET = "ACGT"
 
 aa_alphabet_names = (:aa, :AA, :aminoacids, :amino_acids)
 nt_alphabet_names = (:nt, :nucleotide, :dna)

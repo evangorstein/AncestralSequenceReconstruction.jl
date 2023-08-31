@@ -4,6 +4,7 @@ const ASR = AncestralSequenceReconstruction
 export ASR
 
 using FASTX
+using StatsBase
 using SubstitutionModels
 using TreeTools
 
