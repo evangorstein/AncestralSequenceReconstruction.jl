@@ -1,0 +1,9 @@
+[deps]
+AncestralSequenceReconstruction = "1d4f28ef-5432-422a-9dec-15ed9a8d60be"
+BackwardCoalescent = "78ba55dc-45b1-42ca-b7d8-98224de7860d"
+Chain = "8be319e6-bccf-4806-a6f7-6fae938471bc"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+SubstitutionModels = "8365b1bb-bd83-58ee-a267-f2965fc81c73"
+TreeAlgs = "12935546-5c18-4ff8-8224-37e394524ca8"
+TreeTools = "62f0eae3-8c0e-4032-a621-7756092209e5"
