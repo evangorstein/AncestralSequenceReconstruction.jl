@@ -14,7 +14,7 @@ compute_mapping(s::AbstractString) = Dict(c => i for (i, c) in enumerate(s))
 const AA_MAPPING = compute_mapping(AA_ALPHABET)
 const NT_MAPPING = compute_mapping(NT_ALPHABET)
 
-function map_sequence(s::AbstractString; alphabet = :aa)
+function sequence_to_int(s::AbstractString; alphabet = :aa)
     return if alphabet in aa_alphabet_names
         map(c -> AA_MAPPING[c], collect(s))
     elseif alphabet in nt_alphabet_names
@@ -44,7 +44,7 @@ function fasta_to_tree!(
     while !eof(reader)
         read!(reader, record)
         if in(identifier(record), tree)
-            tree[identifier(record)].data.sequence = map_sequence(sequence(record); alphabet)
+            tree[identifier(record)].data.sequence = sequence_to_int(sequence(record); alphabet)
         else
             all_headers_in_tree = false
         end

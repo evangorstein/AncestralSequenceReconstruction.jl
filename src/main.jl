@@ -5,14 +5,14 @@ Pab = P[b | a, Δt]
 A sum like Σ_b P(b | a, t) * L(b) is `P*L`
 =#
 
-function infer_ancestral!(tree::Tree{AState}, method::ASRMethod)
-    for site in 1:L
+function infer_ancestral!(tree::Tree{<:AState}, method::ASRMethod)
+    for site in 1:method.L
         fetch_weights_down!(tree.root, site, method)
         pull_weights_sample!(tree.root, site, method)
     end
     return tree
 end
-infer_ancestral(t::Tree{AState}, method::ASRMethod) = infer_ancestral!(copy(t), method)
+infer_ancestral(t::Tree{<:AState}, method::ASRMethod) = infer_ancestral!(copy(t), method)
 function infer_ancestral(t::Tree, method::ASRMethod)
     Q = method.alphabet in aa_alphabet_names ? length(AA_ALPHABET) : length(NT_ALPHABET)
     tc = convert(Tree{AState{Q}}, t)
@@ -72,14 +72,14 @@ function pull_weights_sample!(n::TreeNode{<:AState}, site, method)
         throw(ErrorException("Sequence of $n already sampled at site $site - $(n.data)"))
     end
     a, w = if method.ML
-        findmax(n.data.weights)[2]
+        findmax(n.data.weights)[2], 1
     else
         ws = Weights(n.data.weights)
         a = sample(ws)
         a, ws[a]
     end
     push!(n.data.sequence, a)
-    n.data.p = w
+    push!(n.data.seq_weight, w)
 
     # potentially collapse weights
     # if method is marginal, we don't: ignoring reconstruction at other sites
@@ -127,7 +127,7 @@ function fetch_weights_up!(n::TreeNode{<:AState}, site::Int, method::ASRMethod)
 end
 
 function fetch_weights_up_profile!(dest, source, Δt, site, method)
-    model = method.sequence_model[site]
+    model = method.evolution_model[site]
     Qt = P(model, Δt)' # we multiply from left
     dw = Qt * source.weights
     dest.weights .*= dw
@@ -179,7 +179,7 @@ function fetch_weights!(
     end
 end
 function fetch_weights_profile!(dest, source, Δt, site, method)
-    model = method.sequence_model[site]
+    model = method.evolution_model[site]
     Qt = P(model, Δt)
     Δw = if method.ML
         dw = similar(source.weights)
