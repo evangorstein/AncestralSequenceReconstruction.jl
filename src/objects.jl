@@ -1,69 +1,86 @@
-"""
-    mutable struct AState{Q} <: TreeTools.TreeNodeData
+#######################################################################################
+################################## Position weights ###################################
+#######################################################################################
 
-## Fields
-    sequence :: Vector{Int} #
-    site :: Int # current position in the sequence
-    weights :: Vector{Float64} # likelihood of each state `i ∈ {1..Q}` at position `site`
-    seq_weight :: Vector{Float64} # likelihood of the sampled at each sequence position
-"""
-mutable struct AState{Q} <: TreeNodeData
-    sequence :: Vector{Int}
-    site :: Int
-    weights :: Vector{Float64}
-    seq_weight :: Vector{Float64}
-end
-
-AState{Q}() where Q = AState{Q}([], 0, zeros(Float64, Q), Float64[])
-AState() = AState{21}()
-
-function reset_weights!(x::AState)
-    for i in 1:length(x.weights)
-        x.weights[i] = 1
+struct PositionWeights{q}
+    π :: MVector{q, Float64} # eq. probabiltiy of each state
+    w :: MVector{q, Float64} # likelihood weight of each state
+    c :: MVector{q, Int} # character state
+    function PositionWeights{q}(π, w, c) where q
+        @assert isapprox(sum(π), 1) "Probabilities must sum to one - got $(sum(π))"
+        return new{q}(π, w, c)
     end
-    x.site = 0
-    return nothing
 end
-reset_weights!(n::TreeNode{<:AState}) = reset_weights!(n.data)
-function reset_weights!(tree::Tree{<:AState})
-    map(tree) do n
-        reset_weights!(n)
-        !isleaf(n) && (n.data.sequence = Int[])
-    end
-    return nothing
+function PositionWeights{q}(π) where q
+    return PositionWeights{q}(π, ones(MVector{q, Float64}), MVector{q}(zeros(Int, q)))
 end
 
-function normalize!(x::AState)
-    x.weights /= sum(x.weights)
-end
-
-"""
-    mutable struct ASRMethod
-
-- `alphabet` - type of alphabet,  `:aa` or `:nt`. Default `:nt`.
-- `L::Int` - length of sequences. Default `1`.
-- `sequence_model_type` - either `:profile` or `:ardca`. Default `:profile`.
-- `evolution_model` - can be an `ArNet` or a single or an array of  `SubstitutionModel`.
-  Default `GTR(1., 1., 1., 1., 1., 1., .25, .25, .25, .25)` for all sites.
-- `ML::Bool` : infer the maximum likelihood sequences, instead of sampling. Default `false`.
-- `marginal::Bool`: infer from the likelihood marginal at each node,
-  instead of taking into account the state of already sampled nodes. Default `false.`
-"""
-@kwdef mutable struct ASRMethod
-    alphabet::Symbol = :aa
-    L::Int = 1 # length of sequences
-    sequence_model_type::Symbol = :profile
-    evolution_model = [GTR(1., 1., 1., 1., 1., 1., .25, .25, .25, .25) for _ in 1:L]
-    ML::Bool = false
-    marginal::Bool = false
-    normalize_weights::Bool = true
-
-    function ASRMethod(
-        alphabet, L, sequence_model_type, evolution_model::SubstitutionModel, args...,
+function PositionWeights{q}() where q
+    return PositionWeights{q}(
+        ones(MVector{q, Float64})/q,
+        ones(MVector{q, Float64}),
+        MVector{q}(zeros(Int, q)),
     )
-        return new(alphabet, L, sequence_model_type, [evolution_model for i in 1:L], args...)
+end
+
+function reset_weights!(W::PositionWeights{q}) where q
+    for a in 1:q
+        W.w[a] = 1
+        W.c[a] = 0
     end
-    function ASRMethod(alphabet, L, sequence_model_type, evolution_model, args...)
-        return new(alphabet, L, sequence_model_type, evolution_model, args...)
+end
+function normalize!(W::PositionWeights)
+    Z = sum(W.w)
+    for i in eachindex(W.w)
+        W.w[i] = W.w[i]/Z
     end
+    return Z
+end
+
+
+#######################################################################################
+################################### Ancestral state ###################################
+#######################################################################################
+
+@kwdef mutable struct AState{L,q} <: TreeNodeData
+    # things concerning current position
+    pos::Int = 1 # current position being worked on
+    state::Union{Nothing, Int} = nothing
+    weights :: PositionWeights{q} = PositionWeights{q}()
+    # things concerning the whole sequence
+    sequence :: Vector{Union{Nothing, Int}} = Vector{Nothing}(undef, L) # length L
+    pos_likelihood :: Vector{Float64} = Vector{Float64}(undef, L)# lk weight used at each site - length L
+end
+
+function reset_astate!(state::AState)
+    state.state = nothing
+    reset_weights!(state.weights)
+end
+
+reconstructed_positions(state::AState) = findall(!isnothing, state.sequence)
+is_reconstructed(state::AState, pos::Int) = !isnothing(state.sequence[pos])
+
+
+function Base.show(io::IO, ::MIME"text/plain", state::AState{L,q}) where {L,q}
+    if !get(io, :compact, false)
+        println(io, "Ancestral state (L: $L, q: $q)")
+        println(io, "Current position: $(state.pos)")
+        println(io, "Sequence $(state.sequence)")
+    end
+    return nothing
+end
+function Base.show(io::IO, state::AState)
+    print(io, "$(typeof(state)) - \
+     $(length(reconstructed_positions(state))) reconstructed positions - \
+     current position $(state.pos)")
+    return nothing
+end
+
+#######################################################################################
+###################################### ASR Method #####################################
+#######################################################################################
+
+@kwdef mutable struct ASRMethod
+    joint::Bool = false
+    verbosity::Int = 0
 end

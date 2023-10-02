@@ -91,11 +91,11 @@ function pull_weights_up_no_gencode!(parent::AState{L,q}, child::AState{L,q}, ti
     return nothing
 end
 
-function pull_weights_up!(parent::AState{L,q}, child::AState{L,q})
-    lk_factor = child.weights.Q * child.weights.w
-    parent.weights.w .*= lk_factor
-    return lk_factor
-end
+# function pull_weights_up!(parent::AState{L,q}, child::AState{L,q})
+#     lk_factor = child.weights.Q * child.weights.w
+#     parent.weights.w .*= lk_factor
+#     return lk_factor
+# end
 
 """
     pull_weights_up_no_gencode_joint!(parent::AState, child::AState, time)

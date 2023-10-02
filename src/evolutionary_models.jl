@@ -43,15 +43,15 @@ Ordering is irrelevant in this case, defaults to `1:L`.
     P :: Vector{SVector{q, Float64}}
     μ :: Float64 = 1.
     ordering :: Vector{Int} = collect(1:length(P))
-    genetic_code = false
+    genetic_code :: Bool = false
     function IndependentModel{q}(P, μ, ordering, genetic_code) where q
         for p in P
             @assert isapprox(sum(p), 1) "Probabilities must sum to one - got $(sum(p))"
         end
         @assert length(ordering) == length(P) "Dimension mismatch for `P` and ordering vector"
         @assert μ>0 "Mutation rate should be strictly positive"
-        @assert !genetic_code || q == length(AA_ALPHABET) "Can only use `genetic_code` for amino-acids (got q=$q)".
-        return new{q}(P, μ, ordering)
+        @assert !genetic_code || q == length(AA_ALPHABET) "Can only use genetic_code for amino-acids (got q=$q)"
+        return new{q}(P, μ, ordering, genetic_code)
     end
 end
 """
@@ -93,15 +93,15 @@ function set_π!(astate::AState{L,q}, model::IndependentModel{q}) where {L, q}
     return nothing
 end
 
-function set_Q!(astate::AState{L,q}, model::IndependentModel{q}, t) where {L,q}
-    ν = exp(-t)
-    π = model.P[astate.pos]
-    for a in 1:q
-        astate.weights.Q[a,:] .= (1-ν) * π
-        astate.weights.Q[a,a] += ν
-    end
-    return nothing
-end
+# function set_Q!(astate::AState{L,q}, model::IndependentModel{q}, t) where {L,q}
+#     ν = exp(-t)
+#     π = model.P[astate.pos]
+#     for a in 1:q
+#         astate.weights.Q[a,:] .= (1-ν) * π
+#         astate.weights.Q[a,a] += ν
+#     end
+#     return nothing
+# end
 
 
 
@@ -113,7 +113,7 @@ function pull_weights_up!(
     strategy::ASRMethod,
 ) where {L,q}
     set_π!(parent, model)
-    set_Q!(parent, model, model.μ*t)
+    # set_Q!(parent, model, model.μ*t)
     return if strategy.joint
         pull_weights_up_no_gencode_joint!(parent, child, model.μ*t)
     else
