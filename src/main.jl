@@ -96,9 +96,8 @@ end
 
 function send_weights_down!(node::TreeNode{AState{L,q}}, strategy::ASRMethod) where {L,q}
     if isroot(node)
-        # If root, use the marginal strategy anyway: sample from weights
         pull_weights_down!(node.data, nothing)
-        sample_node!(node.data)
+        sample_node_joint!(node.data)
     else
         ancestor_state = ancestor(node).data.state
         if strategy.joint
@@ -164,10 +163,16 @@ end
     sample_node_joint!(node::AState, ancestor_state::Int)
 
 Sample a state for `node` using the ancestor state. Only for the `joint` strategy.
+If `ancestor_state` is not specified, use state of maximum weight (for root). 
 """
 function sample_node_joint!(node::AState, ancestor_state::Int)
     node.state = node.weights.c[ancestor_state]
     node.lk = node.weights.P[ancestor_state, node.state]
+    return node.state
+end
+function sample_node_joint!(node::AState)
+    node.state = argmax(node.weights.w)
+    node.lk = node.weights.π[node.state]
     return node.state
 end
 """
@@ -178,7 +183,6 @@ Sample a state for node using its weights `node.weights.w`.
 """
 function sample_node!(node::AState, ancestor_state::Int)
     node.state = sample(node.weights)
-    @info node.weights.P
     node.lk = node.weights.P[ancestor_state, node.state]
     return node.state
 end
