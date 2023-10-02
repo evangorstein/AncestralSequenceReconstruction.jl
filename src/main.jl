@@ -1,8 +1,46 @@
-function felsenstein!(
-    root::TreeNode,
+function infer_ancestral!(
+    tree::Tree,
     model::EvolutionModel,
     strategy::ASRMethod,
 )
+
+    maxL = 0 # highest achievable likelihood
+    L = 0 # achieved likelihood
+    for pos in model.ordering
+        # Set position for all nodes in the tree
+        set_pos(pos)
+        foreach(n -> n.data.pos = current_pos(), nodes(tree))
+
+        # Propagate weights up to the root
+        # setting leaf state and resetting previous internal states is done here
+        pull_weights_up!(tree.root, model, strategy)
+
+        # send weights down and sample everything
+        # case of the root is handled here
+        send_weights_down!(tree.root, strategy)
+
+        maxL += if strategy.joint
+            maximum(tree.root.data.weights.w) |> log
+        else
+            sum(tree.root.data.weights.w) |> log
+        end
+
+        for node in nodes(tree)
+            node.data.sequence[pos] = node.data.state
+            node.data.pos_likelihood[pos] = node.data.lk
+            L += log(node.data.lk)
+        end
+    end
+
+    return (
+        max_likelihood = maxL,
+        likelihood = L,
+    )
+end
+function infer_ancestral(tree, model, strategy)
+    tree_copy = copy(tree)
+    res = infer_ancestral!(tree_copy, model, strategy)
+    return tree_copy, res
 end
 
 """
@@ -32,7 +70,6 @@ end
 function pull_weights_up!(parent::TreeNode, model::EvolutionModel, strategy::ASRMethod)
     # This is the first time we touch `parent` for this pos: preliminary work
     verbose() > 1 && @info "Weights up for node $(label(parent)) and pos $(current_pos())"
-    parent.data.pos = current_pos()
     if isleaf(parent)
         set_leaf_state!(parent.data)
         return nothing
@@ -47,12 +84,36 @@ function pull_weights_up!(parent::TreeNode, model::EvolutionModel, strategy::ASR
     end
 
     # Special case of the root: we must set its π now since it's never called from above
-    isroot(parent) && set_π!(parent.data, model)
+    if isroot(parent)
+        set_π!(parent.data, model)
+        set_transition_matrix!(parent.data, model, Inf)
+    end
 
     return nothing
 end
 
-function send_weights_down!()
+
+
+function send_weights_down!(node::TreeNode{AState{L,q}}, strategy::ASRMethod) where {L,q}
+    if isroot(node)
+        # If root, use the marginal strategy anyway: sample from weights
+        pull_weights_down!(node.data, nothing)
+        sample_node!(node.data)
+    else
+        ancestor_state = ancestor(node).data.state
+        if strategy.joint
+            sample_node_joint!(node.data, ancestor_state)
+        else
+            pull_weights_down!(node.data, ancestor_state)
+            sample_node!(node.data, ancestor_state)
+        end
+    end
+
+    for child in children(node)
+        send_weights_down!(child, strategy)
+    end
+
+    return nothing
 end
 
 #######################################################################################
@@ -70,52 +131,16 @@ function set_leaf_state!(leaf::AState)
     return nothing
 end
 
-"""
-    pull_weights_up_no_gencode!(parent::AState, child::AState, time)
 
-Multiplies weights at `parent` by the likelihood factor coming from `child`.
-
-## Note
-
-Equilibrium probabilities at `child` should be set beforehand: `child.weights.π`.
-"""
-function pull_weights_up_no_gencode!(parent::AState{L,q}, child::AState{L,q}, time) where {L, q}
-    ν = exp(-time)
-    p = child.weights.π
-    w = child.weights.w
-    dw = (1-ν)*p'*w
-    for r in 1:q
-        lk_factor = ν*child.weights.w[r] + dw
-        parent.weights.w[r] *= lk_factor
-    end
-    return nothing
+function pull_weights_up!(parent::AState{L,q}, child::AState{L,q}) where {L,q}
+    lk_factor = child.weights.P * child.weights.w
+    parent.weights.w .*= lk_factor
+    return lk_factor
 end
-
-# function pull_weights_up!(parent::AState{L,q}, child::AState{L,q})
-#     lk_factor = child.weights.Q * child.weights.w
-#     parent.weights.w .*= lk_factor
-#     return lk_factor
-# end
-
-"""
-    pull_weights_up_no_gencode_joint!(parent::AState, child::AState, time)
-
-Equivalent to `pull_weights_up_no_gencode!` but uses the `max` instead of summing over all
-states at `child`. Also sets the charactec state `child.weights.c` with the argmax.
-
-## Note
-
-Equilibrium probabilities at `child` should be set beforehand: `child.weights.π`.
-"""
-function pull_weights_up_no_gencode_joint!(parent::AState{L,q}, child::AState{L,q}, time) where {L, q}
-    ν = exp(-time)
-    p = child.weights.π
-    w = child.weights.w
-    for r in 1:q
+function pull_weights_up_joint!(parent::AState{L,q}, child::AState{L,q}) where {L,q}
+    for r in 1:q # loop over parent state
         lk_factor, child_state = findmax(1:q) do c
-            l = (1-ν)*p[c]*w[c]
-            c == r && (l += ν*w[r])
-            l
+            child.weights.P[r,c] * child.weights.w[c]
         end
         parent.weights.w[r] *= lk_factor
         child.weights.c[r] = child_state
@@ -123,3 +148,42 @@ function pull_weights_up_no_gencode_joint!(parent::AState{L,q}, child::AState{L,
 
     return nothing
 end
+
+"""
+    pull_weights_down!(node::AState, ancestor_state)
+
+Update weights of `node` using the state of its ancestor.
+If `ancestor_state::Nothing`, uses the equilibrium probability distribution at `node`.
+"""
+pull_weights_down!(node::AState, ::Nothing) = node.weights.w .*= node.weights.π
+function pull_weights_down!(node::AState, ancestor_state::Int)
+    node.weights.w .*= node.weights.P[ancestor_state, :]
+end
+
+"""
+    sample_node_joint!(node::AState, ancestor_state::Int)
+
+Sample a state for `node` using the ancestor state. Only for the `joint` strategy.
+"""
+function sample_node_joint!(node::AState, ancestor_state::Int)
+    node.state = node.weights.c[ancestor_state]
+    node.lk = node.weights.P[ancestor_state, node.state]
+    return node.state
+end
+"""
+    sample_node!(node::AState, ancestor_state)
+
+Sample a state for node using its weights `node.weights.w`.
+`ancestor_state` is used for computing the resulting probability of reconstructed state.
+"""
+function sample_node!(node::AState, ancestor_state::Int)
+    node.state = sample(node.weights)
+    @info node.weights.P
+    node.lk = node.weights.P[ancestor_state, node.state]
+    return node.state
+end
+function sample_node!(node::AState)
+    node.state = sample(node.weights)
+    node.lk = node.weights.π[node.state]
+end
+sample_node!(node::AState, ::Nothing) = sample_node!(node)

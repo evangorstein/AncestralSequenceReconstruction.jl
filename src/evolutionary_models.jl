@@ -15,7 +15,7 @@ function set_π! end
 
 Set propagator matrix `Q` to the input ancestral state, using branch length `t`.
 """
-function set_Q! end
+function set_transition_matrix! end
 
 """
     pull_weights_up!(parent::AState, child::AState, t, model, strategy)
@@ -93,15 +93,21 @@ function set_π!(astate::AState{L,q}, model::IndependentModel{q}) where {L, q}
     return nothing
 end
 
-# function set_Q!(astate::AState{L,q}, model::IndependentModel{q}, t) where {L,q}
-#     ν = exp(-t)
-#     π = model.P[astate.pos]
-#     for a in 1:q
-#         astate.weights.Q[a,:] .= (1-ν) * π
-#         astate.weights.Q[a,a] += ν
-#     end
-#     return nothing
-# end
+"""
+    set_transition_matrix!(astate, model, t)
+
+Set transition matrix to `astate` using time `t`.
+"""
+function set_transition_matrix!(astate::AState{L,q}, model::IndependentModel{q}, t) where {L,q}
+    ν = exp(-model.μ*t)
+    π = model.P[astate.pos]
+    for a in 1:q
+        astate.weights.P[a,:] .= (1-ν) * π
+        astate.weights.P[a,a] += ν
+    end
+    return nothing
+end
+
 
 
 
@@ -112,15 +118,18 @@ function pull_weights_up!(
     model::IndependentModel{q},
     strategy::ASRMethod,
 ) where {L,q}
-    set_π!(parent, model)
-    # set_Q!(parent, model, model.μ*t)
+    set_π!(child, model)
+    set_transition_matrix!(child, model, t)
     return if strategy.joint
-        pull_weights_up_no_gencode_joint!(parent, child, model.μ*t)
+        pull_weights_up_joint!(parent, child)
     else
-        pull_weights_up_no_gencode!(parent, child, model.μ*t)
+        pull_weights_up!(parent, child)
     end
 end
 
+"""
+    transition_probability(old::Int, new::Int, model::IndependentModel, t, pos)
+"""
 function transition_probability(old::Int, new::Int, model::IndependentModel, t, pos)
     ν = exp(-model.μ * t)
     return ν * (old == new) + (1-ν)*model.P[pos][new]
