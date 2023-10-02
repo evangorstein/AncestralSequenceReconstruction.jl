@@ -33,9 +33,9 @@ end
 Add sequences of `fastafile` to nodes of `tree`.
 """
 function fasta_to_tree!(
-    tree::Tree{<:AState}, fastafile::AbstractString, key = :seq;
+    tree::Tree{AState{L,q}}, fastafile::AbstractString, key = :seq;
     warn = true, default=missing, alphabet = :aa
-)
+) where {L,q}
     all_headers_in_tree = true
     all_leaves_in_fasta = true
 
@@ -44,7 +44,14 @@ function fasta_to_tree!(
     while !eof(reader)
         read!(reader, record)
         if in(identifier(record), tree)
-            tree[identifier(record)].data.sequence = sequence_to_int(sequence(record); alphabet)
+            seq = sequence_to_int(sequence(record); alphabet)
+            if maximum(seq) > q
+                error("""
+                    $(typeof(Tree)) with $q states, found $(maximum(seq)) in sequence
+                    Problem with alphabet?
+                """)
+            end
+            tree[identifier(record)].data.sequence = seq
         else
             all_headers_in_tree = false
         end
@@ -63,3 +70,6 @@ function fasta_to_tree!(
         not found in the tree (file: $fastafile)."
     return nothing
 end
+
+
+

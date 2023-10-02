@@ -1,203 +1,125 @@
-#=
-In SubstitutionModel, P(model, Δt) is the matrix
-Pab = P[b | a, Δt]
-
-A sum like Σ_b P(b | a, t) * L(b) is `P*L`
-=#
-
-function infer_ancestral!(tree::Tree{<:AState}, method::ASRMethod)
-    for site in 1:method.L
-        fetch_weights_down!(tree.root, site, method)
-        pull_weights_sample!(tree.root, site, method)
-    end
-    return tree
-end
-infer_ancestral(t::Tree{<:AState}, method::ASRMethod) = infer_ancestral!(copy(t), method)
-function infer_ancestral(t::Tree, method::ASRMethod)
-    Q = method.alphabet in aa_alphabet_names ? length(AA_ALPHABET) : length(NT_ALPHABET)
-    tc = convert(Tree{AState{Q}}, t)
-    return infer_ancestral!(tc, method)
+function felsenstein!(
+    root::TreeNode,
+    model::EvolutionModel,
+    strategy::ASRMethod,
+)
 end
 
 """
-    fetch_weights_down!(n::TreeNode, site::Int, method::ASRMethod)
+    tree_likelihood(tree::Tree, model::EvolutionModel, strategy::ASRMethod)
 
-Get likelihood weights from the children of `n`.
-Calls recursively down the tree.
-If `n` is a leaf, get its weights from its sequence.
+Return the likelihood of the tree without performing the reconstruction.
 """
-function fetch_weights_down!(n::TreeNode{<:AState}, site::Int, method::ASRMethod)
-    if n.data.site == site
-        throw(ErrorException("$(n.label) already initialized?"))
-    end
-    reset_weights!(n)
-    n.data.site = site
+function tree_likelihood!(tree::Tree, model::EvolutionModel, strategy::ASRMethod)
+    L = 0
+    for pos in model.ordering
+        set_pos(pos)
+        foreach(n -> n.data.pos = current_pos(), nodes(tree))
+        pull_weights_up!(tree.root, model, strategy)
 
-    if isleaf(n)
-        if length(n.data.sequence) < site
-            throw(ErrorException("""Issue with sequence on leaf $n at pos $site:\
-                sequence has length $(length(n.data.sequence))
-            """))
-        end
-        set_weights_from_sequence!(n.data, site)
-    else
-        for c in children(n)
-            fetch_weights_down!(c, site, method)
-            fetch_weights!(n, c, site, method)
-            method.normalize_weights && normalize!(n.data)
+        if strategy.joint
+            L += log(maximum(
+                prod,
+                zip(tree.root.data.weights.π, tree.root.data.weights.w)
+            ))
+        else
+            L += log(tree.root.data.weights.π' * tree.root.data.weights.w)
         end
     end
-
-    return n.data
+    return L
 end
 
-"""
-    pull_weights_sample!(n::TreeNode, site, method)
+function pull_weights_up!(parent::TreeNode, model::EvolutionModel, strategy::ASRMethod)
+    # This is the first time we touch `parent` for this pos: preliminary work
+    verbose() > 1 && @info "Weights up for node $(label(parent)) and pos $(current_pos())"
+    parent.data.pos = current_pos()
+    if isleaf(parent)
+        set_leaf_state!(parent.data)
+        return nothing
+    end
+    reset_astate!(parent.data)
 
-- pull weights from `ancestor(n)` (if not a leaf)
-- sample state at position `site` for `n`
-- call self on `children(n)`
-"""
-function pull_weights_sample!(n::TreeNode{<:AState}, site, method)
-    isleaf(n) && return nothing
-
-    # Computing weights for `n` using `ancestor(n)`
-    if !isroot(n)
-        fetch_weights_up!(n, site, method)
-        method.normalize_weights && normalize!(n.data)
+    # Pulling weights from all children
+    for c in children(parent)
+        pull_weights_up!(c, model, strategy) # pull weights for child
+        verbose() > 1 && @info "Pulling weights up: from $(label(c)) to $(label(parent)) - pos $(current_pos())"
+        pull_weights_up!(parent.data, c.data, branch_length(c), model, strategy)
     end
 
-    # sample sequence at site
-    if length(n.data.sequence) != site -1
-        throw(ErrorException("Sequence of $n already sampled at site $site - $(n.data)"))
-    end
-    a, w = if method.ML
-        findmax(n.data.weights)[2], 1
-    else
-        ws = Weights(n.data.weights)
-        a = sample(ws)
-        a, ws[a]
-    end
-    push!(n.data.sequence, a)
-    push!(n.data.seq_weight, w)
+    # Special case of the root: we must set its π now since it's never called from above
+    isroot(parent) && set_π!(parent.data, model)
 
-    # potentially collapse weights
-    # if method is marginal, we don't: ignoring reconstruction at other sites
-    if !method.marginal
-        set_weights_from_sequence!(n.data, site)
-    end
+    return nothing
+end
 
-    for c in children(n)
-        pull_weights_sample!(c, site, method)
+function send_weights_down!()
+end
+
+#######################################################################################
+################################ Operations on weights ################################
+#######################################################################################
+
+
+function set_leaf_state!(leaf::AState)
+    a = leaf.sequence[leaf.pos]
+    for b in eachindex(leaf.weights.w)
+        leaf.weights.w[b] = (b == a ? 1. : 0.)
     end
+    leaf.state = a
 
     return nothing
 end
 
 """
-    fetch_weights_up(n::TreeNode{<:AState}, site::Int, method::ASRMethod)
+    pull_weights_up_no_gencode!(parent::AState, child::AState, time)
 
-Given that `ancestor(n)` already has an inferred state `a` at `site`, pick the state of `n`
-by sampling from
-```
-Qt[b | a] * n.data.weights[b]
-```
+Multiplies weights at `parent` by the likelihood factor coming from `child`.
+
+## Note
+
+Equilibrium probabilities at `child` should be set beforehand: `child.weights.π`.
 """
-function fetch_weights_up!(n::TreeNode{<:AState}, site::Int, method::ASRMethod)
-    if isroot(n)
-        throw(ErrorException("Cannot fetch weights up for root node $(n.label)"))
+function pull_weights_up_no_gencode!(parent::AState{L,q}, child::AState{L,q}, time) where {L, q}
+    ν = exp(-time)
+    p = child.weights.π
+    w = child.weights.w
+    dw = (1-ν)*p'*w
+    for r in 1:q
+        lk_factor = ν*child.weights.w[r] + dw
+        parent.weights.w[r] *= lk_factor
     end
-
-    An = ancestor(n)
-    # An should already have something inferred at this position
-    if length(An.data.sequence) != site
-        throw(ErrorException("""Ancestor of $n has an unexpected sequence length.\
-            Sequence of length $(length(An.data.sequence)) but reconstructing site $site.
-        """))
-    end
-
-    Δt = branch_length(n)
-    if method.sequence_model_type == :profile
-        fetch_weights_up_profile!(n.data, An.data, Δt, site, method)
-    elseif method.sequence_model_type == :ArDCA
-        fetch_weights_up_ardca!()
-    else
-        throw(ArgumentError("Unrecognized sequence model $(method.sequence_model_type)"))
-    end
+    return nothing
 end
 
-function fetch_weights_up_profile!(dest, source, Δt, site, method)
-    model = method.evolution_model[site]
-    Qt = P(model, Δt)' # we multiply from left
-    dw = Qt * source.weights
-    dest.weights .*= dw
-    return dw
+function pull_weights_up!(parent::AState{L,q}, child::AState{L,q})
+    lk_factor = child.weights.Q * child.weights.w
+    parent.weights.w .*= lk_factor
+    return lk_factor
 end
 
 """
-    fetch_weights!(dest::TreeNode, source::TreeNode, site, method::ASRMethod)
+    pull_weights_up_no_gencode_joint!(parent::AState, child::AState, time)
 
-Compute contribution of likelihood weights of `source` to `dest`.
+Equivalent to `pull_weights_up_no_gencode!` but uses the `max` instead of summing over all
+states at `child`. Also sets the charactec state `child.weights.c` with the argmax.
 
-If `method.ML`, then this is
-```
-max_b Qt[a, b] * source.data.weights[b]
-```
+## Note
 
-If `!method.ML`, then
-```
-sum_b Qt[a, b] * source.data.weights[b]
-```
+Equilibrium probabilities at `child` should be set beforehand: `child.weights.π`.
 """
-function fetch_weights!(
-    dest::TreeNode{<:AState}, source::TreeNode{<:AState}, site::Int, method::ASRMethod
-)
-    if source.data.site != site
-        throw(ErrorException("""Cannot fetch weights from $(source.label) to $(dest.label):\
-             the latter is uninitialized.
-        """))
-    end
-
-    # Getting branch length
-    Δt = if ancestor(source) == dest
-        branch_length(source)
-    elseif !isroot(dest) && ancestor(dest) == source
-        branch_length(dest)
-    else
-        throw(ErrorException("""Cannot fetch weights from $(source.label) to $(dest.label):\
-             the nodes are not connected by a branch.
-        """))
-    end
-
-    # Calling specific functions for different evolution models
-    if method.sequence_model_type == :profile
-        fetch_weights_profile!(dest.data, source.data, Δt, site, method)
-    elseif method.sequence_model_type == :ArDCA
-        fetch_weights_ardca!()
-    else
-        throw(ArgumentError("Unrecognized sequence model $(method.sequence_model_type)"))
-    end
-end
-function fetch_weights_profile!(dest, source, Δt, site, method)
-    model = method.evolution_model[site]
-    Qt = P(model, Δt)
-    Δw = if method.ML
-        dw = similar(source.weights)
-        for a in 1:length(dw)
-            dw[a] = findmax(b -> Qt[a, b] * source.weights[b], 1:length(dw))[1]
+function pull_weights_up_no_gencode_joint!(parent::AState{L,q}, child::AState{L,q}, time) where {L, q}
+    ν = exp(-time)
+    p = child.weights.π
+    w = child.weights.w
+    for r in 1:q
+        lk_factor, child_state = findmax(1:q) do c
+            l = (1-ν)*p[c]*w[c]
+            c == r && (l += ν*w[r])
+            l
         end
-        dw
-    else
-        Qt * source.weights
+        parent.weights.w[r] *= lk_factor
+        child.weights.c[r] = child_state
     end
-    dest.weights .*= Δw
-    return Δw
-end
 
-function set_weights_from_sequence!(x::AState, site::Int)
-    for i in 1:length(x.weights)
-        x.weights[i] = 0
-    end
-    x.weights[x.sequence[x.site]] = 1
     return nothing
 end
