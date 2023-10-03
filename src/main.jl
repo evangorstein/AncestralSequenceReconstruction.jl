@@ -1,5 +1,5 @@
 function infer_ancestral!(
-    tree::Tree,
+    tree::Tree{<:AState},
     model::EvolutionModel,
     strategy::ASRMethod,
 )
@@ -37,7 +37,13 @@ function infer_ancestral!(
         likelihood = L,
     )
 end
-function infer_ancestral(tree, model, strategy)
+"""
+    infer_ancestral(tree::Tree{<:AState}, model, strategy)
+
+Create a copy of `tree` and infer ancestral states at internal nodes.
+Leaves of `tree` should already be initialized with observed sequences.
+"""
+function infer_ancestral(tree::Tree{<:AState}, model, strategy)
     tree_copy = copy(tree)
     res = infer_ancestral!(tree_copy, model, strategy)
     return tree_copy, res
@@ -80,7 +86,7 @@ function pull_weights_up!(parent::TreeNode, model::EvolutionModel, strategy::ASR
     for c in children(parent)
         pull_weights_up!(c, model, strategy) # pull weights for child
         verbose() > 1 && @info "Pulling weights up: from $(label(c)) to $(label(parent)) - pos $(current_pos())"
-        pull_weights_up!(parent.data, c.data, branch_length(c), model, strategy)
+        pull_weights_from_child!(parent.data, c.data, branch_length(c), model, strategy)
     end
 
     # Special case of the root: we must set its π now since it's never called from above
@@ -96,14 +102,14 @@ end
 
 function send_weights_down!(node::TreeNode{AState{L,q}}, strategy::ASRMethod) where {L,q}
     if isroot(node)
-        pull_weights_down!(node.data, nothing)
+        pull_weights_from_anc!(node.data, nothing)
         sample_node_joint!(node.data)
     else
         ancestor_state = ancestor(node).data.state
         if strategy.joint
             sample_node_joint!(node.data, ancestor_state)
         else
-            pull_weights_down!(node.data, ancestor_state)
+            pull_weights_from_anc!(node.data, ancestor_state)
             sample_node!(node.data, ancestor_state)
         end
     end
@@ -130,13 +136,33 @@ function set_leaf_state!(leaf::AState)
     return nothing
 end
 
+"""
+    pull_weights_from_child!(parent::AState, child::AState, t, model, strategy)
 
-function pull_weights_up!(parent::AState{L,q}, child::AState{L,q}) where {L,q}
+Multiply weights at `parent` by the factor coming from `child`, in Felsenstein's pruning alg
+"""
+function pull_weights_from_child!(
+    parent::AState{L,q},
+    child::AState{L,q},
+    t,
+    model::EvolutionModel,
+    strategy::ASRMethod,
+) where {L,q}
+    set_π!(child, model)
+    set_transition_matrix!(child, model, t)
+    return if strategy.joint
+        pull_weights_from_child_joint!(parent, child)
+    else
+        pull_weights_from_child!(parent, child)
+    end
+end
+
+function pull_weights_from_child!(parent::AState{L,q}, child::AState{L,q}) where {L,q}
     lk_factor = child.weights.P * child.weights.w
     parent.weights.w .*= lk_factor
     return lk_factor
 end
-function pull_weights_up_joint!(parent::AState{L,q}, child::AState{L,q}) where {L,q}
+function pull_weights_from_child_joint!(parent::AState{L,q}, child::AState{L,q}) where {L,q}
     for r in 1:q # loop over parent state
         lk_factor, child_state = findmax(1:q) do c
             child.weights.P[r,c] * child.weights.w[c]
@@ -149,13 +175,13 @@ function pull_weights_up_joint!(parent::AState{L,q}, child::AState{L,q}) where {
 end
 
 """
-    pull_weights_down!(node::AState, ancestor_state)
+    pull_weights_from_anc!(node::AState, ancestor_state)
 
 Update weights of `node` using the state of its ancestor.
 If `ancestor_state::Nothing`, uses the equilibrium probability distribution at `node`.
 """
-pull_weights_down!(node::AState, ::Nothing) = node.weights.w .*= node.weights.π
-function pull_weights_down!(node::AState, ancestor_state::Int)
+pull_weights_from_anc!(node::AState, ::Nothing) = node.weights.w .*= node.weights.π
+function pull_weights_from_anc!(node::AState, ancestor_state::Int)
     node.weights.w .*= node.weights.P[ancestor_state, :]
 end
 

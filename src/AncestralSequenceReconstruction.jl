@@ -14,12 +14,15 @@ using TreeTools
 include("constants.jl")
 
 include("objects.jl")
-export AState
+export ASRMethod
 
 include("evolutionary_models.jl")
+export EvolutionModel
+export ProfileModel, JukesCantor
 
 include("sequences.jl")
 
 include("main.jl")
+export infer_ancestral
 
 end

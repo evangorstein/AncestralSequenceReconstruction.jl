@@ -94,8 +94,15 @@ end
 ###################################### ASR Method #####################################
 #######################################################################################
 
+"""
+    ASRMethod
+
+- `joint::Bool`: joint or marginal inference. Default `false`.
+- `alphabet :: Symbol`: alphabet used to map from integers to sequences. Default `:aa`.
+- `verbosity :: Int`: verbosity level. Default 0.
+"""
 @kwdef mutable struct ASRMethod
     joint::Bool = false
-    alphabet = :aa
+    alphabet::Symbol = :aa
     verbosity::Int = 0
 end
