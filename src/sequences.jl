@@ -14,17 +14,33 @@ compute_mapping(s::AbstractString) = Dict(c => i for (i, c) in enumerate(s))
 const AA_MAPPING = compute_mapping(AA_ALPHABET)
 const NT_MAPPING = compute_mapping(NT_ALPHABET)
 
-function sequence_to_int(s::AbstractString; alphabet = :aa)
+function unknown_alphabet_error(a)
+    throw(ArgumentError("""
+        Incorrect alphabet type `$a`.
+        Choose from `$aa_alphabet_names` or `$nt_alphabet_names`.
+    """))
+end
+
+function sequence_to_intvec(s::AbstractString; alphabet = :aa)
     return if alphabet in aa_alphabet_names
         map(c -> AA_MAPPING[c], collect(s))
     elseif alphabet in nt_alphabet_names
         map(c -> NT_MAPPING[c], collect(s))
     else
-        throw(ArgumentError("""
-        Incorrect alphabet type `$alphabet`. \
-            Choose from `$aa_alphabet_names` or `$nt_alphabet_names`.
-        """))
+        unknown_alphabet_error(alphabet)
     end
+end
+
+function intvec_to_sequence(X::AbstractVector; alphabet=:aa)
+    amap = if alphabet in aa_alphabet_names
+        AA_ALPHABET
+    elseif alphabet in nt_alphabet_names
+        NT_ALPHABET
+    else
+        unknown_alphabet_error(alphabet)
+    end
+
+    return map(x -> amap[x], X) |> String
 end
 
 """
@@ -44,7 +60,7 @@ function fasta_to_tree!(
     while !eof(reader)
         read!(reader, record)
         if in(identifier(record), tree)
-            seq = sequence_to_int(sequence(record); alphabet)
+            seq = sequence_to_intvec(sequence(record); alphabet)
             if maximum(seq) > q
                 error("""
                     $(typeof(Tree)) with $q states, found $(maximum(seq)) in sequence

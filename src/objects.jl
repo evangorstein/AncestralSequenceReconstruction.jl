@@ -96,5 +96,6 @@ end
 
 @kwdef mutable struct ASRMethod
     joint::Bool = false
+    alphabet = :aa
     verbosity::Int = 0
 end

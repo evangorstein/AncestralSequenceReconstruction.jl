@@ -28,4 +28,12 @@ strategy_joint = ASR.ASRMethod(; joint=true)
         exp(ASR.tree_likelihood!(tree, model, strategy_joint)), lk_fel_joint;
         rtol=1e-4
     )
+
+    t, res = ASR.infer_ancestral(tree, model, strategy_joint)
+    reconstruction = map(["R", "I1", "I2", "I3"]) do label
+        ASR.intvec_to_sequence(t[label].data.sequence; alphabet=:nt)
+    end
+    @test reconstruction == ["G", "A", "G", "G"]
+    @test res.max_likelihood ≈ res.likelihood
+    @test isapprox(exp(res.max_likelihood), lk_fel_joint; rtol=1e-4)
 end

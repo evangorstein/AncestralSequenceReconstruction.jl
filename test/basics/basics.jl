@@ -22,6 +22,6 @@ Pvec = [[1/3, 2/3], [1/2, 1/2], [1/4, 3/4]]
     @test_throws AssertionError ASR.IndependentModel(Pvec .+ [0.01*rand(q) for _ in 1:L]) # should not use rand but well...
     @test_throws AssertionError ASR.IndependentModel(Pmat .+ rand(q, L))
 
-    JC = JukesCantor(1)
+    JC = ASR.JukesCantor(1)
     @test JC.P[1] == 1/4 * ones(Float64, 4)
 end
