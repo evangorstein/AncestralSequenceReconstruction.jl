@@ -90,7 +90,7 @@ end
 
 # ╔═╡ adc0fb01-bfeb-47f7-9de5-b8de444070c0
 begin
-	writedlm("aa_transition_rate_matrix.dat", aa_mut_map)
+	writedlm("aa_transition_rate_matrix.dat", aa_mut_map, ' ')
 	write("aa_mapping.txt", aa_mapping)
 end
 

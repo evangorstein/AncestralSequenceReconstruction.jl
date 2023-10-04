@@ -144,7 +144,7 @@ Multiply weights at `parent` by the factor coming from `child`, in Felsenstein's
 function pull_weights_from_child!(
     parent::AState{L,q},
     child::AState{L,q},
-    t,
+    t::Float64,
     model::EvolutionModel,
     strategy::ASRMethod,
 ) where {L,q}

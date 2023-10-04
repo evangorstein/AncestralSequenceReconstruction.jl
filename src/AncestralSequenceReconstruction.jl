@@ -5,8 +5,9 @@ export ASR
 
 import Base: length
 
-using LinearAlgebra
+using DelimitedFiles
 using FASTX
+using LinearAlgebra
 using StatsBase
 using StaticArrays
 using TreeTools

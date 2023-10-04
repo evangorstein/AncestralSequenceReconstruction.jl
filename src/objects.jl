@@ -72,6 +72,7 @@ end
 
 reconstructed_positions(state::AState) = findall(!isnothing, state.sequence)
 is_reconstructed(state::AState, pos::Int) = !isnothing(state.sequence[pos])
+hassequence(state::AState{L,q}) where {L,q} = all(i -> is_reconstructed(state, i), 1:L)
 
 
 function Base.show(io::IO, ::MIME"text/plain", state::AState{L,q}) where {L,q}

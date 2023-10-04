@@ -23,6 +23,7 @@ Set propagator matrix `Q` to the input ancestral state, using branch length `t`.
 """
 function set_transition_matrix! end
 
+function transition_probability end
 
 
 #######################################################################################
@@ -102,13 +103,31 @@ Set transition matrix to `astate` using time `t`.
 function set_transition_matrix!(astate::AState{L,q}, model::ProfileModel{q}, t) where {L,q}
     ν = exp(-model.μ*t)
     π = model.P[astate.pos]
-    for a in 1:q
-        astate.weights.P[a,:] .= (1-ν) * π
-        astate.weights.P[a,a] += ν
+    for b in 1:q
+        astate.weights.P[:,b] .= (1-ν) * π[b]
+        astate.weights.P[b,b] += ν
     end
     return nothing
 end
 
+function transition_rate_matrix(astate::AState{L,q}, model::ProfileModel{q}) where {L,q}
+    transition_rate_matrix(model, astate.pos)
+end
+function transition_rate_matrix(model::ProfileModel{q}, pos::Int) where q
+    return if model.genetic_code
+    else
+        transition_rate_matrix_no_gencode(model, pos)
+    end
+end
+function transition_rate_matrix_no_gencode(model::ProfileModel{q}, pos) where q
+    Q = zeros(MMatrix{q,q,Float64})
+    π = model.P[pos]
+    for a in 1:q
+        Q[a, :] = π
+        Q[a, a] -= 1
+    end
+    return Q
+end
 
 """
     transition_probability(old::Int, new::Int, model::ProfileModel, t, pos)

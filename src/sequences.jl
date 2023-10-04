@@ -4,6 +4,17 @@ const NT_ALPHABET = "ACGT"
 aa_alphabet_names = (:aa, :AA, :aminoacids, :amino_acids)
 nt_alphabet_names = (:nt, :nucleotide, :dna)
 
+function alphabet_map(alphabet)
+    return if alphabet in aa_alphabet_names
+        AA_ALPHABET
+    elseif alphabet in nt_alphabet_names
+        NT_ALPHABET
+    else
+        unknown_alphabet_error(alphabet)
+    end
+end
+alphabet_size(alphabet) = length(alphabet_map(alphabet))
+
 """
     compute_mapping(s::AbstractString)
 
@@ -21,25 +32,19 @@ function unknown_alphabet_error(a)
     """))
 end
 
-function sequence_to_intvec(s::AbstractString; alphabet = :aa)
+function sequence_to_intvec(s; alphabet = :aa)
     return if alphabet in aa_alphabet_names
-        map(c -> AA_MAPPING[c], collect(s))
+        map(c -> AA_MAPPING[Char(c)], collect(s))
     elseif alphabet in nt_alphabet_names
-        map(c -> NT_MAPPING[c], collect(s))
+        map(c -> NT_MAPPING[Char(c)], collect(s))
     else
         unknown_alphabet_error(alphabet)
     end
 end
+sequence_to_intvec(s::AbstractVector{<:Integer}; kwargs...) = s
 
 function intvec_to_sequence(X::AbstractVector; alphabet=:aa)
-    amap = if alphabet in aa_alphabet_names
-        AA_ALPHABET
-    elseif alphabet in nt_alphabet_names
-        NT_ALPHABET
-    else
-        unknown_alphabet_error(alphabet)
-    end
-
+    amap = alphabet_map(alphabet)
     return map(x -> amap[x], X) |> String
 end
 
@@ -87,5 +92,36 @@ function fasta_to_tree!(
     return nothing
 end
 
+"""
+    sequences_to_tree!(tree::Tree{<:AState}, seqmap; alphabet=:aa, safe)
 
+Iterating `seqmap` should yield pairs `label => sequence`.
+"""
+function sequences_to_tree!(
+    tree::Tree{AState{L,q}}, seqmap;
+    alphabet=:aa, safe=true,
+) where {L,q}
+    for (label, seq) in seqmap
+        if safe && !isleaf(tree[label])
+            error("Cannot assign an observed sequence to internal node. Use `safe=false`?")
+        end
+        if length(seq) != L
+            error("Sequence of incorrect length: got $(length(seq)), expected $L")
+        end
+
+        tree[label].data.sequence = sequence_to_intvec(seq; alphabet)
+    end
+    if any(n -> !hassequence(n.data), leaves(tree))
+        @warn "Somes leaves do not have sequences"
+    end
+    return nothing
+end
+
+function initialize_tree(tree::Tree, seqmap; alphabet=:aa)
+    L = first(seqmap)[2] |> length
+    q = alphabet_size(alphabet)
+    tree = convert(Tree{AState{L,q}}, tree)
+    sequences_to_tree!(tree, seqmap; alphabet)
+    return tree
+end
 
