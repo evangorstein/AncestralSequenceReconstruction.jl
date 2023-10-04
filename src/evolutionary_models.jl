@@ -42,7 +42,7 @@ An independent model without using the genetic code.
 Ordering is irrelevant in this case, defaults to `1:L`.
 """
 @kwdef mutable struct ProfileModel{q} <: EvolutionModel
-    P :: Vector{SVector{q, Float64}}
+    P :: Vector{Vector{Float64}}
     μ :: Float64 = 1.
     ordering :: Vector{Int} = collect(1:length(P))
     genetic_code :: Bool = false

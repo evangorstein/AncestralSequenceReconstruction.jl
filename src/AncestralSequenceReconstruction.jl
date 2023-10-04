@@ -3,13 +3,12 @@ module AncestralSequenceReconstruction
 const ASR = AncestralSequenceReconstruction
 export ASR
 
-import Base: length
+import Base: copy, length
 
 using DelimitedFiles
 using FASTX
 using LinearAlgebra
 using StatsBase
-using StaticArrays
 using TreeTools
 
 include("constants.jl")

@@ -3,10 +3,10 @@
 #######################################################################################
 
 struct PositionWeights{q}
-    π :: MVector{q, Float64} # eq. probabiltiy of each state
-    w :: MVector{q, Float64} # likelihood weight of each state
-    P :: MMatrix{q, q, Float64} # propagator matrix to this state, given branch length to ancestor : P[a,b] = P[a-->b] = P[b|a,t]
-    c :: MVector{q, Int} # character state
+    π :: Vector{Float64} # eq. probabiltiy of each state
+    w :: Vector{Float64} # likelihood weight of each state
+    P :: Matrix{Float64} # propagator matrix to this state, given branch length to ancestor : P[a,b] = P[a-->b] = P[b|a,t]
+    c :: Vector{Int} # character state
     function PositionWeights{q}(π, w, P, c) where q
         @assert isapprox(sum(π), 1) "Probabilities must sum to one - got $(sum(π))"
         @assert all(r -> sum(r)≈1, eachrow(P)) "Rows of transition matrix should sum to 1"
@@ -16,18 +16,20 @@ end
 function PositionWeights{q}(π) where q
     return PositionWeights{q}(
         π,
-        ones(MVector{q, Float64}),
-        MMatrix{q,q,Float64}(diagm(ones(Float64, q))),
-        MVector{q}(zeros(Int, q)),
+        ones(Float64, q),
+        diagm(ones(Float64, q)),
+        zeros(Int, q),
     )
 end
 
-function PositionWeights{q}() where q
+PositionWeights{q}() where q = PositionWeights{q}(ones(Float64, q)/q)
+
+function Base.copy(W::PositionWeights{q}) where q
     return PositionWeights{q}(
-        ones(MVector{q, Float64})/q,
-        ones(MVector{q, Float64}),
-        MMatrix{q,q,Float64}(diagm(ones(Float64, q))),
-        MVector{q}(zeros(Int, q)),
+        copy(W.π),
+        copy(W.w),
+        copy(W.P),
+        copy(W.c),
     )
 end
 
@@ -62,6 +64,17 @@ sample(W::PositionWeights{q}) where q = StatsBase.sample(1:q, Weights(W.w))
     # things concerning the whole sequence
     sequence :: Vector{Union{Nothing, Int}} = Vector{Nothing}(undef, L) # length L
     pos_likelihood :: Vector{Float64} = Vector{Float64}(undef, L)# lk weight used at each site - length L
+end
+
+function Base.copy(state::AState{L,q}) where {L,q}
+    return AState{L,q}(
+        state.pos,
+        state.state,
+        state.lk,
+        copy(state.weights),
+        copy(state.sequence),
+        copy(state.pos_likelihood),
+    )
 end
 
 function reset_astate!(state::AState)
