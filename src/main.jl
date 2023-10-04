@@ -158,14 +158,14 @@ function pull_weights_from_child!(
 end
 
 function pull_weights_from_child!(parent::AState{L,q}, child::AState{L,q}) where {L,q}
-    lk_factor = child.weights.P * child.weights.w
+    lk_factor = child.weights.T * child.weights.w
     parent.weights.w .*= lk_factor
     return lk_factor
 end
 function pull_weights_from_child_joint!(parent::AState{L,q}, child::AState{L,q}) where {L,q}
     for r in 1:q # loop over parent state
         lk_factor, child_state = findmax(1:q) do c
-            child.weights.P[r,c] * child.weights.w[c]
+            child.weights.T[r,c] * child.weights.w[c]
         end
         parent.weights.w[r] *= lk_factor
         child.weights.c[r] = child_state
@@ -182,7 +182,7 @@ If `ancestor_state::Nothing`, uses the equilibrium probability distribution at `
 """
 pull_weights_from_anc!(node::AState, ::Nothing) = node.weights.w .*= node.weights.π
 function pull_weights_from_anc!(node::AState, ancestor_state::Int)
-    node.weights.w .*= node.weights.P[ancestor_state, :]
+    node.weights.w .*= node.weights.T[ancestor_state, :]
 end
 
 """
@@ -193,7 +193,7 @@ If `ancestor_state` is not specified, use state of maximum weight (for root).
 """
 function sample_node_joint!(node::AState, ancestor_state::Int)
     node.state = node.weights.c[ancestor_state]
-    node.lk = node.weights.P[ancestor_state, node.state]
+    node.lk = node.weights.T[ancestor_state, node.state]
     return node.state
 end
 function sample_node_joint!(node::AState)
@@ -209,7 +209,7 @@ Sample a state for node using its weights `node.weights.w`.
 """
 function sample_node!(node::AState, ancestor_state::Int)
     node.state = sample(node.weights)
-    node.lk = node.weights.P[ancestor_state, node.state]
+    node.lk = node.weights.T[ancestor_state, node.state]
     return node.state
 end
 function sample_node!(node::AState)

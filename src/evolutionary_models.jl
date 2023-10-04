@@ -104,8 +104,8 @@ function set_transition_matrix!(astate::AState{L,q}, model::ProfileModel{q}, t) 
     ν = exp(-model.μ*t)
     π = model.P[astate.pos]
     for b in 1:q
-        astate.weights.P[:,b] .= (1-ν) * π[b]
-        astate.weights.P[b,b] += ν
+        astate.weights.T[:,b] .= (1-ν) * π[b]
+        astate.weights.T[b,b] += ν
     end
     return nothing
 end
