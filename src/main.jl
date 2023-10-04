@@ -7,9 +7,11 @@ function infer_ancestral!(
     maxL = 0 # highest achievable likelihood
     L = 0 # achieved likelihood
     for pos in model.ordering
-        # Set position for all nodes in the tree
+        # prepare tree
         set_pos(pos)
         foreach(n -> n.data.pos = current_pos(), nodes(tree))
+        reset_state!(tree)
+        set_transition_matrix!(tree, model)
 
         # Propagate weights up to the root
         # setting leaf state and resetting previous internal states is done here
@@ -57,8 +59,13 @@ Return the likelihood of the tree without performing the reconstruction.
 function tree_likelihood!(tree::Tree, model::EvolutionModel, strategy::ASRMethod)
     L = 0
     for pos in model.ordering
+        # prepare tree
         set_pos(pos)
         foreach(n -> n.data.pos = current_pos(), nodes(tree))
+        reset_state!(tree)
+        set_transition_matrix!(tree, model)
+
+        # do the upward pass
         pull_weights_up!(tree.root, model, strategy)
 
         if strategy.joint
@@ -80,19 +87,12 @@ function pull_weights_up!(parent::TreeNode, model::EvolutionModel, strategy::ASR
         set_leaf_state!(parent.data)
         return nothing
     end
-    reset_astate!(parent.data)
 
     # Pulling weights from all children
     for c in children(parent)
         pull_weights_up!(c, model, strategy) # pull weights for child
         verbose() > 1 && @info "Pulling weights up: from $(label(c)) to $(label(parent)) - pos $(current_pos())"
         pull_weights_from_child!(parent.data, c.data, branch_length(c), model, strategy)
-    end
-
-    # Special case of the root: we must set its π now since it's never called from above
-    if isroot(parent)
-        set_π!(parent.data, model)
-        set_transition_matrix!(parent.data, model, Inf)
     end
 
     return nothing
@@ -136,6 +136,8 @@ function set_leaf_state!(leaf::AState)
     return nothing
 end
 
+
+
 """
     pull_weights_from_child!(parent::AState, child::AState, t, model, strategy)
 
@@ -148,8 +150,6 @@ function pull_weights_from_child!(
     model::EvolutionModel,
     strategy::ASRMethod,
 ) where {L,q}
-    set_π!(child, model)
-    set_transition_matrix!(child, model, t)
     return if strategy.joint
         pull_weights_from_child_joint!(parent, child)
     else

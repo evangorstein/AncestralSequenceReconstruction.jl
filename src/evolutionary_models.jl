@@ -17,11 +17,22 @@ using `model`.
 function set_π! end
 
 """
-    seq_Q!(astate::AState, model::EvolutionModel, t::Float64)
+    seq_transition_matrix!(astate::AState, model::EvolutionModel, t::Float64)
 
-Set propagator matrix `Q` to the input ancestral state, using branch length `t`.
+Set transition matrix to the input ancestral state, using branch length `t`.
 """
 function set_transition_matrix! end
+"""
+    set_transition_matrix!(tree::Tree, model::EvolutionModel)
+
+Set the transition matrix for all branches in `tree`.
+"""
+function set_transition_matrix!(tree::Tree, model::EvolutionModel)
+    foreach(nodes(tree)) do n
+        set_transition_matrix!(n.data, model, branch_length(n))
+    end
+    return nothing
+end
 
 function transition_probability end
 
@@ -100,7 +111,7 @@ end
 
 Set transition matrix to `astate` using time `t`.
 """
-function set_transition_matrix!(astate::AState{L,q}, model::ProfileModel{q}, t) where {L,q}
+function set_transition_matrix!(astate::AState, model::ProfileModel{q}, t::Float64) where q
     ν = exp(-model.μ*t)
     π = model.P[astate.pos]
     for b in 1:q
@@ -109,6 +120,7 @@ function set_transition_matrix!(astate::AState{L,q}, model::ProfileModel{q}, t) 
     end
     return nothing
 end
+set_transition_matrix!(X, model, t::Missing) = set_transition_matrix!(X, model, Inf)
 
 function transition_rate_matrix(astate::AState{L,q}, model::ProfileModel{q}) where {L,q}
     transition_rate_matrix(model, astate.pos)

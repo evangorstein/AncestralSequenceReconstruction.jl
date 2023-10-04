@@ -77,11 +77,12 @@ function Base.copy(state::AState{L,q}) where {L,q}
     )
 end
 
-function reset_astate!(state::AState)
+function reset_state!(state::AState)
     state.state = nothing
     state.lk = 0
     reset_weights!(state.weights)
 end
+reset_state!(tree::Tree) = foreach(n -> reset_state!(n.data), nodes(tree))
 
 reconstructed_positions(state::AState) = findall(!isnothing, state.sequence)
 is_reconstructed(state::AState, pos::Int) = !isnothing(state.sequence[pos])

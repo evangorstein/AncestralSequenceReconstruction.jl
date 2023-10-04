@@ -1,9 +1,9 @@
 dir = dirname(@__FILE__)
 
-# dir = "Felsenstein/"
-# using AncestralSequenceReconstruction
-# using Test
-# using TreeTools
+dir = "Felsenstein/"
+using AncestralSequenceReconstruction
+using Test
+using TreeTools
 
 L = 1
 q = 4
