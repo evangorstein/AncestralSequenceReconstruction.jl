@@ -10,6 +10,7 @@ struct BranchWeights{q}
     function BranchWeights{q}(π, w, T, c) where q
         @assert isapprox(sum(π), 1) "Probabilities must sum to one - got $(sum(π))"
         @assert all(r -> sum(r)≈1, eachrow(T)) "Rows of transition matrix should sum to 1"
+        @assert length(π) == length(c) == size(w) == size(T,1) == size(T,2) == q "Expected vectors of dimension $q"
         return new{q}(π, w, T, c)
     end
 end
@@ -56,12 +57,15 @@ sample(W::BranchWeights{q}) where q = StatsBase.sample(1:q, Weights(W.w))
 #######################################################################################
 
 @kwdef mutable struct AState{L,q} <: TreeNodeData
-    # things concerning current position
+    # concerning the branch above the corresponding node
+    weights :: BranchWeights{q} = BranchWeights{q}()
+
+    # things concerning current position at the node
     pos::Int = 1 # current position being worked on
     state::Union{Nothing, Int} = nothing
     lk::Float64 = 0. # likelihood of sampled state
-    weights :: BranchWeights{q} = BranchWeights{q}()
-    # things concerning the whole sequence
+
+    # concerning the whole sequence at the node
     sequence :: Vector{Union{Nothing, Int}} = Vector{Nothing}(undef, L) # length L
     pos_likelihood :: Vector{Float64} = Vector{Float64}(undef, L)# lk weight used at each site - length L
 end
