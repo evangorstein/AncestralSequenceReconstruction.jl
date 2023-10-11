@@ -8,7 +8,7 @@ using TreeTools
 L = 1
 q = 4
 
-tree = read_tree(dir * "/tree.16.4.nwk"; node_data_type=ASR.AState{L,q})
+tree = read_tree(dir * "/tree.16.4.nwk"; node_data_type=ASR.AState{q})
 ASR.fasta_to_tree!(tree, dir * "/alignment.16.4.fasta"; alphabet=:nt)
 
 lk_fel_marginal = 0.0000124065
@@ -19,7 +19,7 @@ model = ASR.JukesCantor(L)
 strategy_marginal = ASR.ASRMethod(; joint = false)
 strategy_joint = ASR.ASRMethod(; joint=true)
 
-@testset "Felsenstein's example" begin
+@testset "Felsenstein reconstruction" begin
     @test isapprox(
         exp(ASR.tree_likelihood!(tree, model, strategy_marginal)), lk_fel_marginal;
         rtol=1e-5
@@ -36,4 +36,10 @@ strategy_joint = ASR.ASRMethod(; joint=true)
     @test reconstruction == ["G", "A", "G", "G"]
     @test res.max_likelihood ≈ res.likelihood
     @test isapprox(exp(res.max_likelihood), lk_fel_joint; rtol=1e-4)
+end
+
+@testset "Felsenstein Pupko" begin
+    t = ASR.pupko_alg(tree, model, strategy_marginal)
+    L = log(lk_fel_marginal)
+    @test all(≈(L; rtol = 1e-4), map(ASR.pupko_likelihood, nodes(t)))
 end

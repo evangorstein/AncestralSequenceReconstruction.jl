@@ -4,19 +4,25 @@
 
 struct BranchWeights{q}
     π :: Vector{Float64} # eq. probabiltiy of each state
-    w :: Vector{Float64} # likelihood weight of each state
+    u :: Vector{Float64} # up-likelihood: probability of data excluding the subtree
+    v :: Vector{Float64} # down-likelihood: probability of data below the subtree
     T :: Matrix{Float64} # propagator matrix to this state, given branch length to ancestor : T[a,b] = T[a-->b] = T[b|a,t]
     c :: Vector{Int} # character state
-    function BranchWeights{q}(π, w, T, c) where q
+    function BranchWeights{q}(π, u, v, T, c) where q
         @assert isapprox(sum(π), 1) "Probabilities must sum to one - got $(sum(π))"
         @assert all(r -> sum(r)≈1, eachrow(T)) "Rows of transition matrix should sum to 1"
-        @assert length(π) == length(c) == size(w) == size(T,1) == size(T,2) == q "Expected vectors of dimension $q"
-        return new{q}(π, w, T, c)
+        @assert length(π) == q "Expected frequency vector of dimension $q, got $π"
+        @assert length(u) == q "Expected weights vector of dimension $q, got $u"
+        @assert length(v) == q "Expected weights vector of dimension $q, got $v"
+        @assert length(c) == q "Expected character state vector of dimension $q, got $c"
+        @assert size(T,1) == size(T,2) == q "Expected transition matrix of dimension $q, got $T"
+        return new{q}(π, u, v, T, c)
     end
 end
 function BranchWeights{q}(π) where q
     return BranchWeights{q}(
         π,
+        ones(Float64, q),
         ones(Float64, q),
         diagm(ones(Float64, q)),
         zeros(Int, q),
@@ -28,7 +34,8 @@ BranchWeights{q}() where q = BranchWeights{q}(ones(Float64, q)/q)
 function Base.copy(W::BranchWeights{q}) where q
     return BranchWeights{q}(
         copy(W.π),
-        copy(W.w),
+        copy(W.u),
+        copy(W.v),
         copy(W.T),
         copy(W.c),
     )
@@ -36,76 +43,99 @@ end
 
 function reset_weights!(W::BranchWeights{q}) where q
     for a in 1:q
-        W.w[a] = 1
+        W.u[a] = 1
+        W.v[a] = 1
         W.c[a] = 0
         foreach(b -> W.T[a,b] = 0, 1:q)
         W.T[a,a] = 1
     end
 end
-function normalize!(W::BranchWeights)
-    Z = sum(W.w)
-    for i in eachindex(W.w)
-        W.w[i] = W.w[i]/Z
-    end
-    return Z
+# I SHOULD STORE Z_v, Z_u / in the meantime this is disabled
+# function normalize!(W::BranchWeights)
+#     Z = sum(W.v)
+#     for i in eachindex(W.v)
+#         W.v[i] = W.v[i]/Z
+#     end
+#     return Z
+# end
+
+sample(W::BranchWeights{q}) where q = StatsBase.sample(1:q, Weights(W.v))
+
+#######################################################################################
+#################################### Position state ###################################
+#######################################################################################
+
+@kwdef mutable struct PosState{q} <: TreeNodeData
+    pos::Int = 0
+    c :: Union{Nothing, Int} = nothing # current state at this position
+    lk :: Float64 = 0.
+    weights::BranchWeights{q} = BranchWeights{q}() # weights for the alg.
 end
 
-sample(W::BranchWeights{q}) where q = StatsBase.sample(1:q, Weights(W.w))
+function Base.copy(pstate::PosState{q}) where q
+    return PosState{q}(;
+        pos=pstate.pos,
+        c = pstate.c,
+        lk = pstate.lk,
+        weights = copy(pstate.weights),
+    )
+end
+
+function reset_state!(pstate::PosState)
+    pstate.c = nothing
+    pstate.lk = 0
+    reset_weights!(pstate.weights)
+    return nothing
+end
 
 #######################################################################################
 ################################### Ancestral state ###################################
 #######################################################################################
 
-@kwdef mutable struct AState{L,q} <: TreeNodeData
-    # concerning the branch above the corresponding node
-    weights :: BranchWeights{q} = BranchWeights{q}()
+@kwdef struct AState{q} <: TreeNodeData
+    L::Int = 1
 
-    # things concerning current position at the node
-    pos::Int = 1 # current position being worked on
-    state::Union{Nothing, Int} = nothing
-    lk::Float64 = 0. # likelihood of sampled state
+    # state of the node during the algorithm
+    pstates :: Vector{PosState{q}} = [PosState{q}(; pos=i) for i in 1:L]
 
-    # concerning the whole sequence at the node
+    # final result: whole sequence at this node
     sequence :: Vector{Union{Nothing, Int}} = Vector{Nothing}(undef, L) # length L
-    pos_likelihood :: Vector{Float64} = Vector{Float64}(undef, L)# lk weight used at each site - length L
+
+    function AState{q}(L, pstates, sequence) where q
+        @assert length(pstates) == length(sequence) == L """
+            Incorrect dimensions: expected sequence of length $L, got $sequence and $pstates
+        """
+        @assert all(x -> x[2].pos == x[1], enumerate(pstates))
+        return new{q}(L, pstates, sequence)
+    end
 end
 
-function Base.copy(state::AState{L,q}) where {L,q}
-    return AState{L,q}(
-        state.pos,
-        state.state,
-        state.lk,
-        copy(state.weights),
-        copy(state.sequence),
-        copy(state.pos_likelihood),
+function Base.copy(state::AState{q}) where q
+    return AState{q}(;
+        L = state.L,
+        pstates = map(copy, state.pstates),
+        sequence = copy(state.sequence),
     )
 end
 
-function reset_state!(state::AState)
-    state.state = nothing
-    state.lk = 0
-    reset_weights!(state.weights)
-end
-reset_state!(tree::Tree) = foreach(n -> reset_state!(n.data), nodes(tree))
+reset_state!(state::AState, pos::Int) = reset_state!(state.pstates[pos])
+reset_state!(tree::Tree, pos::Int) = foreach(n -> reset_state!(n.data, pos), nodes(tree))
 
 reconstructed_positions(state::AState) = findall(!isnothing, state.sequence)
 is_reconstructed(state::AState, pos::Int) = !isnothing(state.sequence[pos])
-hassequence(state::AState{L,q}) where {L,q} = all(i -> is_reconstructed(state, i), 1:L)
+hassequence(state::AState{q}) where q = all(i -> is_reconstructed(state, i), 1:state.L)
 
 
-function Base.show(io::IO, ::MIME"text/plain", state::AState{L,q}) where {L,q}
+function Base.show(io::IO, ::MIME"text/plain", state::AState{q}) where q
     if !get(io, :compact, false)
-        println(io, "Ancestral state (L: $L, q: $q)")
-        println(io, "Current position: $(state.pos)")
-        println(io, "Reconstructed/Observed state: $(state.state)")
+        println(io, "Ancestral state (L: $(state.L), q: $q)")
         println(io, "Sequence $(state.sequence)")
     end
     return nothing
 end
 function Base.show(io::IO, state::AState)
     print(io, "$(typeof(state)) - \
-     $(length(reconstructed_positions(state))) reconstructed positions - \
-     current position $(state.pos)")
+     $(length(reconstructed_positions(state))) reconstructed positions")
     return nothing
 end
 

@@ -22,7 +22,9 @@ export ProfileModel, JukesCantor
 
 include("sequences.jl")
 
-include("main.jl")
+include("reconstruction.jl")
 export infer_ancestral
+
+include("time_opt.jl")
 
 end

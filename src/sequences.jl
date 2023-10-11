@@ -54,9 +54,9 @@ end
 Add sequences of `fastafile` to nodes of `tree`.
 """
 function fasta_to_tree!(
-    tree::Tree{AState{L,q}}, fastafile::AbstractString, key = :seq;
+    tree::Tree{AState{q}}, fastafile::AbstractString, key = :seq;
     warn = true, default=missing, alphabet = :aa
-) where {L,q}
+) where q
     all_headers_in_tree = true
     all_leaves_in_fasta = true
 
@@ -72,7 +72,7 @@ function fasta_to_tree!(
                     Problem with alphabet?
                 """)
             end
-            tree[identifier(record)].data.sequence = seq
+            tree[identifier(record)].data.sequence .= seq
         else
             all_headers_in_tree = false
         end
@@ -98,18 +98,16 @@ end
 Iterating `seqmap` should yield pairs `label => sequence`.
 """
 function sequences_to_tree!(
-    tree::Tree{AState{L,q}}, seqmap;
+    tree::Tree{AState{q}}, seqmap;
     alphabet=:aa, safe=true,
-) where {L,q}
+) where q
     for (label, seq) in seqmap
         if safe && !isleaf(tree[label])
             error("Cannot assign an observed sequence to internal node. Use `safe=false`?")
         end
-        if length(seq) != L
-            error("Sequence of incorrect length: got $(length(seq)), expected $L")
-        end
-
-        tree[label].data.sequence = sequence_to_intvec(seq; alphabet)
+        tree[label].data = AState{q}(;
+            L = length(seq), sequence = sequence_to_intvec(seq; alphabet)
+        )
     end
     if any(n -> !hassequence(n.data), leaves(tree))
         @warn "Somes leaves do not have sequences"
@@ -117,11 +115,14 @@ function sequences_to_tree!(
     return nothing
 end
 
+"""
+    initialize_tree(tree::Tree, seqmap; alphabet=:aa)
+"""
 function initialize_tree(tree::Tree, seqmap; alphabet=:aa)
     L = first(seqmap)[2] |> length
     q = alphabet_size(alphabet)
-    tree = convert(Tree{AState{L,q}}, tree)
+    tree = convert(Tree{AState{q}}, tree)
+    foreach(n -> n.data = AState{q}(;L), nodes(tree))
     sequences_to_tree!(tree, seqmap; alphabet)
     return tree
 end
-
