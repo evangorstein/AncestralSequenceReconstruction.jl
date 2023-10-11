@@ -8,6 +8,7 @@ import Base: copy, length
 using DelimitedFiles
 using FASTX
 using LinearAlgebra
+using NLopt
 using StatsBase
 using TreeTools
 

@@ -124,7 +124,7 @@ Equivalent to `ProfileModel(map(_ -> [1/4, 1/4, 1/4, 1/4], 1:L); μ = 4/3)`.
 """
 JukesCantor(L::Int) = ProfileModel(map(_ -> [1/4, 1/4, 1/4, 1/4], 1:L); μ = 4/3)
 
-
+Base.length(model::ProfileModel) = length(model.P)
 #=
 ########## set_π ##########
 =#

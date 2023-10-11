@@ -1,3 +1,109 @@
+function optimize_branch_length!(node::TreeNode, model::EvolutionModel{q}) where q
+    L = length(node.data.pstates)
+    # Set parameters
+    params = (
+        L = L,
+        Qs = [zeros(Float64, q, q) for _ in 1:L],
+        Ts = [zeros(Float64, q, q) for _ in 1:L],
+        model = model,
+    )
+
+    # Set optimizer
+    lw_bound = 1e-3/L
+    up_bound = 2*log(L)
+    epsconv = 1e-5
+    maxit = 100
+
+    opt = Opt(:LD_LBFGS, 1)
+    lower_bounds!(opt, lw_bound)
+    upper_bounds!(opt, up_bound)
+    ftol_abs!(opt, epsconv)
+    xtol_rel!(opt, epsconv)
+    xtol_abs!(opt, epsconv)
+    ftol_rel!(opt, epsconv)
+    maxeval!(opt, maxit)
+
+    # Optimize
+    optimize_branch_length!(node, opt, params)
+end
+
+function optimize_branch_lengths_cycle!(
+    tree::Tree,
+    model::EvolutionModel{q},
+    strategy = ASRMethod()
+) where q
+    # global opt parameters
+    L = length(model)
+    params = (
+        L = L,
+        Qs = [zeros(Float64, q, q) for _ in 1:L],
+        Ts = [zeros(Float64, q, q) for _ in 1:L],
+        model = model,
+    )
+    # optimizer
+    lw_bound = 1e-3/L
+    up_bound = 2*log(L)
+    epsconv = 1e-5
+    maxit = 100
+
+    opt = Opt(:LD_LBFGS, 1)
+    lower_bounds!(opt, lw_bound)
+    upper_bounds!(opt, up_bound)
+    ftol_abs!(opt, epsconv)
+    xtol_rel!(opt, epsconv)
+    xtol_abs!(opt, epsconv)
+    ftol_rel!(opt, epsconv)
+    maxeval!(opt, maxit)
+
+    # cycle through nodes
+    for n in nodes(tree; skiproot=true)
+        optimize_branch_length!(n, opt, params)
+        pupko_alg!(tree, model, strategy)
+    end
+
+    return nothing
+end
+
+function optimize_branch_length!(tree::Tree, model, strategy = ASRMethod(); rconv = 1e-2)
+    # initial state
+    pupko_alg!(tree, model, strategy)
+    L = [pupko_likelihood(tree.root)]
+
+    # first pass
+    optimize_branch_lengths_cycle!(tree, model, strategy)
+    push!(L, pupko_likelihood(tree.root))
+    L[end] < L[end-1] && @warn "Likelihood decreased during optimization: something's wrong"
+
+    while (L[end-1] - L[end]) / L[end-1] > rconv
+        optimize_branch_lengths_cycle!(tree, model, strategy)
+        push!(L, pupko_likelihood(tree.root))
+        L[end] < L[end-1] && @warn "Likelihood decreased during optimization: something's wrong"
+    end
+
+    return L
+end
+
+function optimize_branch_length!(node::TreeNode, opt, params)
+    max_objective!(opt, (t, g) -> optim_wrapper(t, g, params, node))
+    g = Float64[0.]
+    t0 = max(Float64[branch_length(node)], opt.lower_bounds)
+    result = optimize(opt, t0)
+    branch_length!(node, result[2][1])
+    return result
+end
+
+function optim_wrapper(t, grad, p, node)
+    foreach(1:p.L) do i
+        ASR.set_transition_rate_matrix!(p.Qs[i], p.model, i)
+        ASR.set_transition_matrix!(p.Ts[i], p.model, t[1], i)
+    end
+    loglk, g = ASR.pupko_loglk_and_grad(node, p.Qs, p.Ts)
+    if !isempty(grad)
+        grad[1] = g
+    end
+    return loglk
+end
+
 function pupko_likelihood(node::TreeNode)
     return pupko_likelihood(node, map(s -> s.weights.T, node.data.pstates))
 end
@@ -20,6 +126,11 @@ function pupko_loglk_and_grad(
     end
     return sum(log, lks), grad
 end
+
+
+#######################################################################################
+################################### Pupko's pruning ###################################
+#######################################################################################
 
 function pupko_alg!(tree::Tree, model::EvolutionModel, strategy::ASRMethod)
     for pos in model.ordering
