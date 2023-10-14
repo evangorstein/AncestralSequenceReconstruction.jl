@@ -32,7 +32,7 @@ function unknown_alphabet_error(a)
     """))
 end
 
-function sequence_to_intvec(s; alphabet = :aa)
+function sequence_to_intvec(s::AbstractString; alphabet = :aa)
     return if alphabet in aa_alphabet_names
         map(c -> AA_MAPPING[Char(c)], collect(s))
     elseif alphabet in nt_alphabet_names

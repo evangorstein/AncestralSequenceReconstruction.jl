@@ -20,10 +20,11 @@ function infer_ancestral!(
         # case of the root is handled here
         send_weights_down!(tree.root, strategy)
 
+        W = tree.root.data.pstates[pos].weights
         maxL += if strategy.joint
-            maximum(tree.root.data.pstates[pos].weights.v) |> log
+            log(maximum(W.v)) + W.Zv[]
         else
-            sum(tree.root.data.pstates[pos].weights.v) |> log
+            log(sum(W.v)) + W.Zv[]
         end
 
         for node in nodes(tree)
@@ -65,20 +66,17 @@ function tree_likelihood!(tree::Tree, model::EvolutionModel, strategy::ASRMethod
         # do the upward pass
         pull_weights_up!(tree.root, strategy)
 
+        Wr = tree.root.data.pstates[pos].weights
         if strategy.joint
-            L += log(maximum(
-                prod,
-                zip(tree.root.data.pstates[pos].weights.π, tree.root.data.pstates[pos].weights.v)
-            ))
+            L += log(maximum(prod, zip(Wr.π, Wr.v))) + Wr.Zv[]
         else
-            L += log(tree.root.data.pstates[pos].weights.π' * tree.root.data.pstates[pos].weights.v)
+            L += log(Wr.π' * Wr.v) + Wr.Zv[]
         end
     end
     return L
 end
 
 function pull_weights_up!(parent::TreeNode, strategy::ASRMethod)
-    # This is the first time we touch `parent` for this pos: preliminary work
     verbose() > 1 && @info "Weights up for node $(label(parent)) and pos $(current_pos())"
     if isleaf(parent)
         set_leaf_state!(parent.data, current_pos())
@@ -95,6 +93,7 @@ function pull_weights_up!(parent::TreeNode, strategy::ASRMethod)
             strategy
         )
     end
+    normalize_weights!(parent, current_pos())
 
     return nothing
 end
@@ -163,6 +162,7 @@ end
 function pull_weights_from_child!(parent::PosState{q}, child::PosState{q}) where q
     lk_factor = child.weights.T * child.weights.v
     parent.weights.v .*= lk_factor
+    parent.weights.Zv[] += child.weights.Zv[]
     return lk_factor
 end
 function pull_weights_from_child_joint!(parent::PosState{q}, child::PosState{q}) where q
@@ -173,6 +173,7 @@ function pull_weights_from_child_joint!(parent::PosState{q}, child::PosState{q})
         parent.weights.v[r] *= lk_factor
         child.weights.c[r] = child_state
     end
+    parent.weights.Zv[] += child.weights.Zv[]
 
     return nothing
 end

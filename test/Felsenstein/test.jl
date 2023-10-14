@@ -38,8 +38,8 @@ strategy_joint = ASR.ASRMethod(; joint=true)
     @test isapprox(exp(res.max_likelihood), lk_fel_joint; rtol=1e-4)
 end
 
-@testset "Felsenstein Pupko" begin
-    t = ASR.pupko_alg(tree, model, strategy_marginal)
-    L = log(lk_fel_marginal)
-    @test all(≈(L; rtol = 1e-4), map(ASR.pupko_likelihood, nodes(t)))
+@testset "Felsenstein Bousseau" begin
+    t = ASR.bousseau_alg(tree, model, strategy_marginal)
+    lk = log(lk_fel_marginal)
+    @test all(≈(lk; rtol = 1e-4), map(ASR.bousseau_likelihood, nodes(t)))
 end

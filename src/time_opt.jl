@@ -1,3 +1,31 @@
+function optimize_branch_length!(
+    tree::Tree, model, strategy = ASRMethod();
+    rconv = 1e-2, ncycles = Inf,
+)
+    # initial state
+    bousseau_alg!(tree, model, strategy)
+    L = [bousseau_likelihood(tree.root)]
+
+    # first pass
+    optimize_branch_lengths_cycle!(tree, model, strategy)
+    push!(L, bousseau_likelihood(tree.root))
+    L[end] < L[end-1] && @warn "Likelihood decreased during optimization: something's wrong"
+
+    n = 0
+    while (L[end-1] - L[end]) / L[end-1] > rconv && n < ncycles
+        optimize_branch_lengths_cycle!(tree, model, strategy)
+        push!(L, bousseau_likelihood(tree.root))
+        L[end] < L[end-1] && @warn "Likelihood decreased during optimization: something's wrong"
+        n += 1
+    end
+
+    return L
+end
+
+#=
+Optimize a single branch length (no cycle)
+useful only for testing
+=#
 function optimize_branch_length!(node::TreeNode, model::EvolutionModel{q}) where q
     L = length(node.data.pstates)
     # Set parameters
@@ -57,30 +85,18 @@ function optimize_branch_lengths_cycle!(
 
     # cycle through nodes
     for n in nodes(tree; skiproot=true)
+        # set best branch length for n
+        bousseau_alg!(tree, model, strategy)
         optimize_branch_length!(n, opt, params)
-        pupko_alg!(tree, model, strategy)
+        # recompute the transition matrix for the branch above n
+        # foreach(1:L) do i
+        #     ASR.set_transition_matrix!(n.data.pstates[i], model, branch_length(n))
+        # end
+        # update_neighbours!(n, model)
+        # bousseau_alg!(tree, model, strategy)
     end
 
     return nothing
-end
-
-function optimize_branch_length!(tree::Tree, model, strategy = ASRMethod(); rconv = 1e-2)
-    # initial state
-    pupko_alg!(tree, model, strategy)
-    L = [pupko_likelihood(tree.root)]
-
-    # first pass
-    optimize_branch_lengths_cycle!(tree, model, strategy)
-    push!(L, pupko_likelihood(tree.root))
-    L[end] < L[end-1] && @warn "Likelihood decreased during optimization: something's wrong"
-
-    while (L[end-1] - L[end]) / L[end-1] > rconv
-        optimize_branch_lengths_cycle!(tree, model, strategy)
-        push!(L, pupko_likelihood(tree.root))
-        L[end] < L[end-1] && @warn "Likelihood decreased during optimization: something's wrong"
-    end
-
-    return L
 end
 
 function optimize_branch_length!(node::TreeNode, opt, params)
@@ -97,29 +113,29 @@ function optim_wrapper(t, grad, p, node)
         ASR.set_transition_rate_matrix!(p.Qs[i], p.model, i)
         ASR.set_transition_matrix!(p.Ts[i], p.model, t[1], i)
     end
-    loglk, g = ASR.pupko_loglk_and_grad(node, p.Qs, p.Ts)
+    loglk, g = ASR.bousseau_loglk_and_grad(node, p.Qs, p.Ts)
     if !isempty(grad)
         grad[1] = g
     end
     return loglk
 end
 
-function pupko_likelihood(node::TreeNode)
-    return pupko_likelihood(node, map(s -> s.weights.T, node.data.pstates))
+function bousseau_likelihood(node::TreeNode)
+    return bousseau_likelihood(node, map(s -> s.weights.T, node.data.pstates))
 end
-function pupko_likelihood(node::TreeNode, Ts::AbstractVector{<:AbstractMatrix{Float64}})
+function bousseau_likelihood(node::TreeNode, Ts::AbstractVector{<:AbstractMatrix{Float64}})
     return sum(zip(node.data.pstates, Ts)) do (s, T)
-        log(s.weights.u' * T * s.weights.v)
+        log(s.weights.u' * T * s.weights.v) + s.weights.Zv[] + s.weights.Zu[]
     end
 end
 
-function pupko_loglk_and_grad(
+function bousseau_loglk_and_grad(
     node::TreeNode,
     Qs::AbstractVector{<:AbstractMatrix{Float64}},
     Ts::AbstractVector{<:AbstractMatrix{Float64}},
 )
     lks = map(zip(node.data.pstates, Ts)) do (s, T)
-        s.weights.u' * T * s.weights.v
+        s.weights.u' * T * s.weights.v # no need for Z, they're constants
     end
     grad = sum(zip(node.data.pstates, Qs, Ts, lks)) do (s, Q, T, lk)
         (s.weights.u' * Q) * (T * s.weights.v) / lk
@@ -127,12 +143,54 @@ function pupko_loglk_and_grad(
     return sum(log, lks), grad
 end
 
+"""
+    update_neighbours!(node::TreeNode)
+"""
+function update_neighbours!(node::TreeNode; kwargs...)
+    return foreach(i -> update_neighbours!(node, i; kwargs...), 1:node.data.L)
+end
+function update_neighbours!(
+    node::TreeNode, pos::Int;
+    sisters = false, anc = false, child = false,
+)
+    @assert !isroot(node) "This should never be called on the root node"
+    if sisters
+        # sisters of node: likelihood up `u` has to be recomputed
+        # node will be involved as: node.T * node.v
+        for sister in Iterators.filter(!=(node), children(ancestor(node)))
+            reset_up_likelihood!(sister, pos)
+            fetch_up_lk!(sister, pos)
+            normalize_weights!(sister, pos)
+        end
+    end
+    if anc
+        # ancestor of node: likelihood down `v` has to be recomputed
+        # node will be involved as: node.T * node.v
+        A = ancestor(node)
+        reset_down_likelihood!(A, pos)
+        for c in children(A)
+            pull_weights_from_child!(A.data.pstates[pos], c.data.pstates[pos])
+        end
+        normalize_weights!(A, pos)
+    end
+
+    if child
+        # children of node: likelihood up `u` has to be recomputed
+        # node will be involved as: node.T * node.u
+        for c in children(node)
+            reset_up_likelihood!(c, pos)
+            fetch_up_lk!(c, pos)
+            normalize_weights!(c, pos)
+        end
+    end
+end
+
 
 #######################################################################################
-################################### Pupko's pruning ###################################
+################################### Bousseau's pruning ###################################
 #######################################################################################
 
-function pupko_alg!(tree::Tree, model::EvolutionModel, strategy::ASRMethod)
+function bousseau_alg!(tree::Tree, model::EvolutionModel, strategy::ASRMethod = ASRMethod())
     for pos in model.ordering
         set_pos(pos)
         reset_state!(tree, pos)
@@ -149,16 +207,16 @@ function pupko_alg!(tree::Tree, model::EvolutionModel, strategy::ASRMethod)
     return nothing
 end
 """
-    pupko_alg(tree::Tree, model::EvolutionModel, strategy::ASRMethod)
+    bousseau_alg(tree::Tree, model::EvolutionModel, strategy::ASRMethod)
 
-Apply the Pupko *et. al.* algorithm to a copy of `tree`.
+Apply the Bousseau *et. al.* algorithm to a copy of `tree`.
 For each node `n` and sequence position `pos`,
 up likelihoods will be in `n.data.pstates[pos].weights.u` and the down
 likelihoods in `n.data.pstates[pos].weights.v`.
 """
-function pupko_alg(tree, model, strategy)
+function bousseau_alg(tree, model, strategy = ASRMethod())
     tc = copy(tree)
-    pupko_alg!(tc, model, strategy)
+    bousseau_alg!(tc, model, strategy)
     return tc
 end
 
@@ -172,17 +230,8 @@ function up_likelihood!(node::TreeNode{<:AState}, strategy)
     if isroot(node)
         fetch_up_lk_from_ancestor!(node.data.pstates[current_pos()], nothing)
     else
-        A = ancestor(node)
-        fetch_up_lk_from_ancestor!(
-            node.data.pstates[current_pos()],
-            A.data.pstates[current_pos()]
-        )
-        for c in Iterators.filter(!=(node), children(A))
-            fetch_up_lk_from_child!(
-                node.data.pstates[current_pos()],
-                c.data.pstates[current_pos()]
-            )
-        end
+        fetch_up_lk!(node, current_pos())
+        normalize_weights!(node, current_pos())
     end
     # recursive call on children (only after we computed u)
     for c in children(node)
@@ -190,10 +239,36 @@ function up_likelihood!(node::TreeNode{<:AState}, strategy)
     end
 end
 
+"""
+    fetch_up_lk!(node::TreeNode, pos::Int)
+
+Let `A` be the ancestor of `node`.
+This computes the up-likelihood for the branch `A --> node`, by
+- calling `fetch_up_lk_from_ancestor!(node, A)`, which will use the up lk from `A`
+- calling `fetch_up_lk_from_child!(node, c)` for all `c ∈ children(A)` and `c ≢ node`,
+  which will use the down lk from `c`.
+
+If those quantities were initialized correctly, then the up likelihood at `node` is
+fully computed here, but not normalized.
+"""
+function fetch_up_lk!(node::TreeNode, pos::Int)
+    A = ancestor(node)
+    fetch_up_lk_from_ancestor!(
+        node.data.pstates[pos],
+        A.data.pstates[pos]
+    )
+    for c in Iterators.filter(!=(node), children(A))
+        fetch_up_lk_from_child!(
+            node.data.pstates[pos],
+            c.data.pstates[pos]
+        )
+    end
+end
+
 function fetch_up_lk_from_ancestor!(child::PosState{q}, parent::PosState{q}) where q
     lk_factor = parent.weights.u' * parent.weights.T
-    # child.weights.u .*= lk_factor
     foreach(x -> child.weights.u[x] *= lk_factor[x], 1:q)
+    child.weights.Zu[] += parent.weights.Zu[]
     return lk_factor
 end
 function fetch_up_lk_from_ancestor!(root::PosState, ::Nothing)
@@ -201,8 +276,25 @@ function fetch_up_lk_from_ancestor!(root::PosState, ::Nothing)
     return root.weights.π
 end
 
+#=
+in reality, parent and child are brother nodes --
+I call it child because it is a child of the upper node of the branch represented by parent
+=#
 function fetch_up_lk_from_child!(parent::PosState, child::PosState)
     lk_factor = child.weights.T * child.weights.v
     parent.weights.u .*= lk_factor
+    parent.weights.Zu[] += child.weights.Zv[]
     return lk_factor
 end
+
+# #=
+# Undo fetch_up_lk_from_child
+# useful when the branch length of child has been changed
+# =#
+# function forget_up_lk_from_child!(parent::PosState, child::PosState)
+#     lk_factor = child.weights.T * child.weights.v
+#     if any(≈(0; atol = 1e-6), lk_factor)
+#         error("Message has one weight equal to 0: cannot divide")
+#     end
+#     parent.weights.u
+# end

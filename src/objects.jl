@@ -2,13 +2,15 @@
 ################################## Position weights ###################################
 #######################################################################################
 
-struct BranchWeights{q}
+mutable struct BranchWeights{q}
     π :: Vector{Float64} # eq. probabiltiy of each state
     u :: Vector{Float64} # up-likelihood: probability of data excluding the subtree
     v :: Vector{Float64} # down-likelihood: probability of data below the subtree
+    Zu :: Array{Float64, 0} # log-normalization for u --> u*exp(Zu) are the actual likelihoods
+    Zv :: Array{Float64, 0} # log-normalization for v // dim 0 array is a trick for mutability
     T :: Matrix{Float64} # propagator matrix to this state, given branch length to ancestor : T[a,b] = T[a-->b] = T[b|a,t]
     c :: Vector{Int} # character state
-    function BranchWeights{q}(π, u, v, T, c) where q
+    function BranchWeights{q}(π, u, v, Zu, Zv, T, c) where q
         @assert isapprox(sum(π), 1) "Probabilities must sum to one - got $(sum(π))"
         @assert all(r -> sum(r)≈1, eachrow(T)) "Rows of transition matrix should sum to 1"
         @assert length(π) == q "Expected frequency vector of dimension $q, got $π"
@@ -16,7 +18,7 @@ struct BranchWeights{q}
         @assert length(v) == q "Expected weights vector of dimension $q, got $v"
         @assert length(c) == q "Expected character state vector of dimension $q, got $c"
         @assert size(T,1) == size(T,2) == q "Expected transition matrix of dimension $q, got $T"
-        return new{q}(π, u, v, T, c)
+        return new{q}(π, u, v, Zu, Zv, T, c)
     end
 end
 function BranchWeights{q}(π) where q
@@ -24,6 +26,8 @@ function BranchWeights{q}(π) where q
         π,
         ones(Float64, q),
         ones(Float64, q),
+        fill(0.),
+        fill(0.),
         diagm(ones(Float64, q)),
         zeros(Int, q),
     )
@@ -32,14 +36,17 @@ end
 BranchWeights{q}() where q = BranchWeights{q}(ones(Float64, q)/q)
 
 function Base.copy(W::BranchWeights{q}) where q
-    return BranchWeights{q}(
-        copy(W.π),
-        copy(W.u),
-        copy(W.v),
-        copy(W.T),
-        copy(W.c),
-    )
+    return BranchWeights{q}([copy(getproperty(W, f)) for f in propertynames(W)]...)
 end
+#         copy(W.π),
+#         copy(W.u),
+#         copy(W.v),
+#         copy(W.Zu),
+#         copy(W.Zv),
+#         copy(W.T),
+#         copy(W.c),
+#     )
+# end
 
 function reset_weights!(W::BranchWeights{q}) where q
     for a in 1:q
@@ -49,15 +56,41 @@ function reset_weights!(W::BranchWeights{q}) where q
         foreach(b -> W.T[a,b] = 0, 1:q)
         W.T[a,a] = 1
     end
+    W.Zu[] = 0.
+    W.Zv[] = 0.
+
+    return nothing
 end
-# I SHOULD STORE Z_v, Z_u / in the meantime this is disabled
-# function normalize!(W::BranchWeights)
-#     Z = sum(W.v)
-#     for i in eachindex(W.v)
-#         W.v[i] = W.v[i]/Z
-#     end
-#     return Z
-# end
+
+function reset_up_likelihood!(W::BranchWeights{q}) where q
+    foreach(a -> W.u[a] = 1, 1:q)
+    W.Zu[] = 0.
+    return nothing
+end
+reset_up_likelihood!(n::TreeNode, pos) = reset_up_likelihood!(n.data.pstates[pos].weights)
+
+function reset_down_likelihood!(W::BranchWeights{q}) where q
+    foreach(a -> W.v[a] = 1, 1:q)
+    W.Zv[] = 0.
+    return nothing
+end
+function reset_down_likelihood!(n::TreeNode, pos)
+    reset_down_likelihood!(n.data.pstates[pos].weights)
+end
+
+function normalize!(W::BranchWeights)
+    Zv = sum(W.v)
+    Zu = sum(W.u)
+    for i in eachindex(W.v)
+        W.u[i] = W.u[i]/Zu
+        W.v[i] = W.v[i]/Zv
+    end
+    W.Zu[] += log(Zu)
+    W.Zv[] += log(Zv)
+
+    return nothing
+end
+normalize_weights!(n::TreeNode, pos::Int) = normalize!(n.data.pstates[pos].weights)
 
 sample(W::BranchWeights{q}) where q = StatsBase.sample(1:q, Weights(W.v))
 
