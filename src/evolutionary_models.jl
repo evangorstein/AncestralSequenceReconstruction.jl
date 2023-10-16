@@ -49,14 +49,24 @@ function set_transition_matrix!(tree::Tree, model::EvolutionModel, pos::Int)
 end
 
 """
-    get_transition_matrix(model::EvolutionModel, t, pos)
+    transition_matrix(model::EvolutionModel, t, pos)
 
 Return the transition matrix for `model` at position `pos` and branch length `t`.
 """
-function get_transition_matrix(model::EvolutionModel{q}, t, pos) where q
+function transition_matrix(model::EvolutionModel{q}, t, pos) where q
     T = zeros(Float64, q, q)
     set_transition_matrix!(T, model, t, pos)
     return T
+end
+"""
+    transition_rate_matrix(model::EvolutionModel, pos)
+
+Return the transition rate matrix for `model` at position `pos`.
+"""
+function transition_rate_matrix(model::EvolutionModel{q}, pos) where q
+    Q = zeros(Float64, q, q)
+    set_transition_rate_matrix!(Q, model, pos)
+    return Q
 end
 
 function transition_probability end

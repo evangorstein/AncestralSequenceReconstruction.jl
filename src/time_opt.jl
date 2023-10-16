@@ -1,25 +1,30 @@
 function optimize_branch_length!(
     tree::Tree, model, strategy = ASRMethod();
-    rconv = 1e-2, ncycles = Inf,
+    rconv = 1e-2, ncycles = 10,
 )
     # initial state
     bousseau_alg!(tree, model, strategy)
-    L = [bousseau_likelihood(tree.root)]
+    lk = [bousseau_likelihood(tree.root)]
 
     # first pass
     optimize_branch_lengths_cycle!(tree, model, strategy)
-    push!(L, bousseau_likelihood(tree.root))
-    L[end] < L[end-1] && @warn "Likelihood decreased during optimization: something's wrong"
+    push!(lk, bousseau_likelihood(tree.root))
+    lk[end] < lk[end-1] && @warn "Likelihood decreased during optimization: something's wrong"
 
     n = 0
-    while (L[end-1] - L[end]) / L[end-1] > rconv && n < ncycles
+    while (lk[end-1] - lk[end]) / lk[end-1] > rconv && n < (ncycles - 1)
         optimize_branch_lengths_cycle!(tree, model, strategy)
-        push!(L, bousseau_likelihood(tree.root))
-        L[end] < L[end-1] && @warn "Likelihood decreased during optimization: something's wrong"
+        push!(lk, bousseau_likelihood(tree.root))
+        lk[end] < lk[end-1] && @warn "Likelihood decreased during optimization: something's wrong"
         n += 1
     end
 
-    return L
+    return lk
+end
+function optimize_branch_length(tree, model, strategy = ASRMethod(); kwargs...)
+    tc = copy(tree)
+    lk = optimize_branch_length!(tc, model, strategy; kwargs...)
+    return tc, lk
 end
 
 #=
@@ -37,8 +42,8 @@ function optimize_branch_length!(node::TreeNode, model::EvolutionModel{q}) where
     )
 
     # Set optimizer
-    lw_bound = 1e-3/L
-    up_bound = 2*log(L)
+    lw_bound = BRANCH_LWR_BOUND(L)
+    up_bound = BRANCH_UPR_BOUND(L)
     epsconv = 1e-5
     maxit = 100
 
@@ -69,8 +74,8 @@ function optimize_branch_lengths_cycle!(
         model = model,
     )
     # optimizer
-    lw_bound = 1e-3/L
-    up_bound = 2*log(L)
+    lw_bound = BRANCH_LWR_BOUND(L)
+    up_bound = BRANCH_UPR_BOUND(L)
     epsconv = 1e-5
     maxit = 100
 
@@ -84,16 +89,14 @@ function optimize_branch_lengths_cycle!(
     maxeval!(opt, maxit)
 
     # cycle through nodes
-    for n in nodes(tree; skiproot=true)
+    for n in Iterators.filter(!isroot, POT(tree.root))
         # set best branch length for n
-        bousseau_alg!(tree, model, strategy)
         optimize_branch_length!(n, opt, params)
         # recompute the transition matrix for the branch above n
-        # foreach(1:L) do i
-        #     ASR.set_transition_matrix!(n.data.pstates[i], model, branch_length(n))
-        # end
-        # update_neighbours!(n, model)
-        # bousseau_alg!(tree, model, strategy)
+        foreach(1:L) do i
+            ASR.set_transition_matrix!(n.data.pstates[i], model, branch_length(n))
+        end
+        update_neighbours!(n; anc=true, sisters=true)
     end
 
     return nothing
@@ -104,6 +107,9 @@ function optimize_branch_length!(node::TreeNode, opt, params)
     g = Float64[0.]
     t0 = max(Float64[branch_length(node)], opt.lower_bounds)
     result = optimize(opt, t0)
+    if !in(result[3], [:SUCCESS, :STOPVAL_REACHED, :FTOL_REACHED, :XTOL_REACHED])
+        @warn "Branch length opt. above $(label(node)): $result"
+    end
     branch_length!(node, result[2][1])
     return result
 end
@@ -113,7 +119,7 @@ function optim_wrapper(t, grad, p, node)
         ASR.set_transition_rate_matrix!(p.Qs[i], p.model, i)
         ASR.set_transition_matrix!(p.Ts[i], p.model, t[1], i)
     end
-    loglk, g = ASR.bousseau_loglk_and_grad(node, p.Qs, p.Ts)
+    loglk, g = ASR.bousseau_loglk_and_grad(node, p.Qs, p.Ts, p.model.μ)
     if !isempty(grad)
         grad[1] = g
     end
@@ -133,12 +139,13 @@ function bousseau_loglk_and_grad(
     node::TreeNode,
     Qs::AbstractVector{<:AbstractMatrix{Float64}},
     Ts::AbstractVector{<:AbstractMatrix{Float64}},
+    μ,
 )
     lks = map(zip(node.data.pstates, Ts)) do (s, T)
         s.weights.u' * T * s.weights.v # no need for Z, they're constants
     end
     grad = sum(zip(node.data.pstates, Qs, Ts, lks)) do (s, Q, T, lk)
-        (s.weights.u' * Q) * (T * s.weights.v) / lk
+        μ * (s.weights.u' * Q) * (T * s.weights.v) / lk
     end
     return sum(log, lks), grad
 end

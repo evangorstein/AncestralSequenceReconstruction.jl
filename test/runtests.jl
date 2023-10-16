@@ -8,5 +8,5 @@ using TreeTools
     # Example in Felsenstein's "Inferring phylogenies" in section 16.4
     include("Felsenstein/test.jl")
     # Bousseau alg: update neighbours
-    include("BousseauAlg/test.jl")
+    include("time_opt/test.jl")
 end
