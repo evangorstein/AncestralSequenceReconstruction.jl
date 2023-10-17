@@ -19,6 +19,7 @@ export ASRMethod
 
 include("evolutionary_models.jl")
 export EvolutionModel
+include("profile_model.jl")
 export ProfileModel, JukesCantor
 
 include("sequences.jl")

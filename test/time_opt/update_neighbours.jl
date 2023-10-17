@@ -29,7 +29,7 @@ T1, T2 = begin
     T1 = copy(tree)
     ASR.bousseau_alg!(T1, model)
     branch_length!(T1["I1"], 2.)
-    ASR.set_transition_matrix!(T1["I1"].data.pstates[1], model, 2.)
+    ASR.set_transition_matrix!(T1["I1"].data, model, 2., 1)
 
     # T2: change branch and fully compute lk ~ truth
     T2 = copy(tree)

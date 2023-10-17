@@ -38,15 +38,6 @@ BranchWeights{q}() where q = BranchWeights{q}(ones(Float64, q)/q)
 function Base.copy(W::BranchWeights{q}) where q
     return BranchWeights{q}([copy(getproperty(W, f)) for f in propertynames(W)]...)
 end
-#         copy(W.π),
-#         copy(W.u),
-#         copy(W.v),
-#         copy(W.Zu),
-#         copy(W.Zv),
-#         copy(W.T),
-#         copy(W.c),
-#     )
-# end
 
 function reset_weights!(W::BranchWeights{q}) where q
     for a in 1:q
