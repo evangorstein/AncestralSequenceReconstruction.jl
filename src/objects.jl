@@ -81,6 +81,11 @@ end
 function normalize!(W::BranchWeights)
     Zv = sum(W.v)
     Zu = sum(W.u)
+    # check for issues
+    if Zv == 0 || Zu == 0
+        error("Found likelihood weight equal to 0 - model may not be able to accomodate for data")
+    end
+
     for i in eachindex(W.v)
         W.u[i] = W.u[i]/Zu
         W.v[i] = W.v[i]/Zv
