@@ -3,7 +3,6 @@ function infer_ancestral!(
     model::EvolutionModel,
     strategy::ASRMethod,
 )
-
     maxL = 0 # highest achievable likelihood
     likelihood = 0 # achieved likelihood
     for pos in model.ordering
@@ -50,6 +49,49 @@ function infer_ancestral(tree::Tree{<:AState}, model, strategy)
     return tree_copy, res
 end
 
+function infer_ancestral(
+    newick_file::AbstractString, fastafile::AbstractString, model, strategy;
+    outfasta = nothing, outnewick = nothing,
+)
+    # read sequences
+    seqmap = FASTAReader(open(fastafile, "r")) do reader
+        map(rec -> identifier(rec) => sequence(rec),reader)
+    end
+
+    # set parameters and read tree
+    L = length(first(seqmap)[2])
+    q = alphabet_size(strategy.alphabet)
+    if any(x -> length(x[2]) != L, seqmap)
+        error("All sequences must have the same length in $fastafile")
+    end
+    T() = AState{q}(;L)
+    tree = read_tree(newick_file; node_data_type = T)
+    sequences_to_tree!(tree, seqmap)
+
+    # re-infer branch length -- should be a strategy option
+    optimize_branch_length!(tree, model, strategy)
+
+    # reconstruct
+    infer_ancestral!(tree, model, strategy)
+    internal_sequences = map(internals(tree)) do node
+        label(node) => intvec_to_sequence(node.data.sequence; alphabet = strategy.alphabet)
+    end
+
+    # write output if asked
+    if !isnothing(outfasta)
+        FASTAWriter(open(outfasta, "w")) do reader
+            for (name, seq) in internal_sequences
+                write(reader, FASTARecord(name, seq))
+            end
+        end
+    end
+    if !isnothing(outnewick)
+        write(outnewick, tree; internal_labels=true)
+    end
+
+    return tree, internal_sequences
+end
+
 """
     tree_likelihood(tree::Tree, model::EvolutionModel, strategy::ASRMethod)
 
@@ -76,8 +118,10 @@ function tree_likelihood!(tree::Tree, model::EvolutionModel, strategy::ASRMethod
     return L
 end
 
-function pull_weights_up!(parent::TreeNode, strategy::ASRMethod)
-    verbose() > 1 && @info "Weights up for node $(label(parent)) and pos $(current_pos())"
+function pull_weights_up!(
+    parent::TreeNode{AState{q}}, strategy::ASRMethod; holder = Vector{Float64}(undef, q)
+) where q
+    verbose() > 2 && @info "Weights up for node $(label(parent)) and pos $(current_pos())"
     if isleaf(parent)
         set_leaf_state!(parent.data, current_pos())
         return nothing
@@ -85,12 +129,13 @@ function pull_weights_up!(parent::TreeNode, strategy::ASRMethod)
 
     # Pulling weights from all children
     for c in children(parent)
-        pull_weights_up!(c, strategy) # pull weights for child
-        verbose() > 1 && @info "Pulling weights up: from $(label(c)) to $(label(parent)) - pos $(current_pos())"
+        pull_weights_up!(c, strategy; holder) # pull weights for child
+        verbose() > 2 && @info "Pulling weights up: from $(label(c)) to $(label(parent)) - pos $(current_pos())"
         pull_weights_from_child!(
             parent.data.pstates[current_pos()],
             c.data.pstates[current_pos()],
-            strategy
+            strategy,
+            holder,
         )
     end
     normalize_weights!(parent, current_pos())
@@ -151,21 +196,27 @@ function pull_weights_from_child!(
     parent::PosState{q},
     child::PosState{q},
     strategy::ASRMethod,
+    holder::Vector{Float64} = Vector{Float64}(undef, q),
 ) where q
     return if strategy.joint
         pull_weights_from_child_joint!(parent, child)
     else
-        pull_weights_from_child!(parent, child)
+        pull_weights_from_child!(parent, child, holder)
     end
 end
 
-function pull_weights_from_child!(parent::PosState{q}, child::PosState{q}) where q
-    lk_factor = child.weights.T * child.weights.v
+function pull_weights_from_child!(
+    parent::PosState{q}, child::PosState{q}, lk_factor,
+) where q
+    # lk_factor = child.weights.T * child.weights.v
+    mul!(lk_factor, child.weights.T, child.weights.v)
     parent.weights.v .*= lk_factor
     parent.weights.Zv[] += child.weights.Zv[]
     return lk_factor
 end
-function pull_weights_from_child_joint!(parent::PosState{q}, child::PosState{q}) where q
+function pull_weights_from_child_joint!(
+    parent::PosState{q}, child::PosState{q},
+) where q
     for r in 1:q # loop over parent state
         lk_factor, child_state = findmax(1:q) do c
             child.weights.T[r,c] * child.weights.v[c]

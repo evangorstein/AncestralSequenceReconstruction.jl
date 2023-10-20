@@ -44,8 +44,8 @@ function reset_weights!(W::BranchWeights{q}) where q
         W.u[a] = 1
         W.v[a] = 1
         W.c[a] = 0
-        foreach(b -> W.T[a,b] = 0, 1:q)
-        W.T[a,a] = 1
+        # foreach(b -> W.T[a,b] = 0, 1:q)
+        # W.T[a,a] = 1
     end
     W.Zu[] = 0.
     W.Zv[] = 0.

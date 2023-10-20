@@ -54,8 +54,8 @@ end
 Add sequences of `fastafile` to nodes of `tree`.
 """
 function fasta_to_tree!(
-    tree::Tree{AState{q}}, fastafile::AbstractString, key = :seq;
-    warn = true, default=missing, alphabet = :aa
+    tree::Tree{AState{q}}, fastafile::AbstractString;
+    warn = true, default=missing, alphabet = :aa,
 ) where q
     all_headers_in_tree = true
     all_leaves_in_fasta = true
