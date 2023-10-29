@@ -7,15 +7,14 @@ function optimize_branch_length!(
 
     # initial state
     verbose() > 1 && @info "First pass of likelihood computation..."
-    t = @elapsed bousseau_alg!(tree, model, strategy)
-    bousseau_alg!(tree, model, strategy)
-    lk = [bousseau_likelihood(tree.root)]
+    t = @elapsed pruning_alg!(tree, model, strategy; set_state=false)
+    lk = [likelihood(tree.root)]
     verbose() > 1 && @info "Initial lk $(lk[1]) - $t seconds"
 
     # first pass
     verbose() > 1 && @info "First pass of branch length opt..."
     t = @elapsed optimize_branch_lengths_cycle!(tree, model, strategy)
-    push!(lk, bousseau_likelihood(tree.root))
+    push!(lk, likelihood(tree.root))
     lk[end] < lk[end-1] && @warn "Likelihood decreased during optimization: something's wrong"
     verbose() > 1 && @info "Likelihood $(lk) - $t seconds"
 
@@ -23,7 +22,7 @@ function optimize_branch_length!(
     while (lk[end-1] - lk[end]) / lk[end-1] > rconv && n < (ncycles - 1)
         verbose() > 1 && @info "Branch length opt $(n+2)..."
         t = @elapsed optimize_branch_lengths_cycle!(tree, model, strategy)
-        push!(lk, bousseau_likelihood(tree.root))
+        push!(lk, likelihood(tree.root))
         lk[end] < lk[end-1] && @warn "Likelihood decreased during optimization: something's wrong"
         verbose() > 1 && @info "Likelihood $(lk) - $t seconds"
         n += 1
@@ -85,17 +84,17 @@ function optimize_branch_lengths_cycle!(
     for n in Iterators.filter(!isroot, POT(tree.root))
         # set best branch length for n
         @debug "---- Opt. branch length node $(label(n)) ----"
-        @debug "Previous lk" ASR.bousseau_likelihood(n)
+        @debug "Previous lk" ASR.likelihood(n)
         optimize_branch_length!(n, opt, params)
 
         # recompute the transition matrix for the branch above n
         foreach(1:L) do i
             ASR.set_transition_matrix!(n.data, model, branch_length(n), i)
         end
-        @debug "New lk" ASR.bousseau_likelihood(n)
-        bousseau_alg!(tree, model.ordering, strategy)
+        @debug "New lk" ASR.likelihood(n)
+        pruning_alg!(tree, model, strategy; set_state=false)
 
-        @debug "Ancestor $(label(ancestor(n))) lk" ASR.bousseau_likelihood(ancestor(n))
+        @debug "Ancestor $(label(ancestor(n))) lk" ASR.likelihood(ancestor(n))
     end
 
     return nothing
@@ -160,14 +159,7 @@ function branch_length_loglk_and_grad(
     return loglk, grad
 end
 
-function bousseau_likelihood(node::TreeNode)
-    return bousseau_likelihood(node, map(s -> s.weights.T, node.data.pstates))
-end
-function bousseau_likelihood(node::TreeNode, Ts::AbstractVector{<:AbstractMatrix{Float64}})
-    return sum(zip(node.data.pstates, Ts)) do (s, T)
-        log(s.weights.u' * T * s.weights.v) + s.weights.Zv[] + s.weights.Zu[]
-    end
-end
+
 
 
 """
@@ -248,7 +240,7 @@ function optimize_branch_length!(node::TreeNode, model::EvolutionModel{q}) where
 
     # Optimize
     @debug "---- Opt. branch length node $(label(node)) ----"
-    @debug "Previous lk" ASR.bousseau_likelihood(node)
+    @debug "Previous lk" ASR.likelihood(node)
 
     optimize_branch_length!(node, opt, params)
 
@@ -257,152 +249,17 @@ function optimize_branch_length!(node::TreeNode, model::EvolutionModel{q}) where
     foreach(1:L) do i
         ASR.set_transition_matrix!(node.data, model, branch_length(node), i)
     end
-    @debug "New lk" ASR.bousseau_likelihood(node)
+    @debug "New lk" ASR.likelihood(node)
     # update_neighbours!(node; anc=true, sisters=true)
-    # bousseau_alg!
 
 
-    @debug "Ancestor $(label(ancestor(node))) lk" ASR.bousseau_likelihood(ancestor(node))
+
+    @debug "Ancestor $(label(ancestor(node))) lk" ASR.likelihood(ancestor(node))
     for c in children(ancestor(node))
-        @debug "sister $(label(c)) lk" ASR.bousseau_likelihood(c)
+        @debug "sister $(label(c)) lk" ASR.likelihood(c)
     end
 end
 
 
-#######################################################################################
-################################### Bousseau's pruning ###################################
-#######################################################################################
 
-"""
-    bousseau_alg!(tree, model::EvolutionModel, strategy::ASRMethod)
-    bousseau_alg!(tree, ordering, strategy::ASRMethod)
-
-First form: apply the Bousseau et. al. algorithm to `tree` in place.
-Second form: same, but assumes that the transition matrices and equilibrium frequencies
-for each node are **already set**.
-"""
-function bousseau_alg!(
-    tree::Tree, model::EvolutionModel, strategy::ASRMethod = ASRMethod(; joint=false)
-)
-    if strategy.joint
-        error("For now, `bousseau_alg` is only for marginal: `strategy.joint=false`")
-    end
-
-    for pos in model.ordering
-        set_π!(tree, model, pos)
-        set_transition_matrix!(tree, model, pos)
-    end
-    bousseau_alg!(tree, model.ordering, strategy)
-
-    return nothing
-end
-function bousseau_alg!(
-    tree::Tree{AState{q}}, ordering::AbstractVector{Int}, strategy::ASRMethod,
-) where q
-    holder = Vector{Float64}(undef, q) # for in place mat mul
-    for pos in ordering
-        set_pos(pos)
-        reset_state!(tree, pos)
-
-        # compute down likelihood for all nodes
-        down_likelihood!(tree, strategy; holder)
-        # compute up likelihood
-        up_likelihood!(tree, strategy; holder)
-    end
-    return nothing
-end
-
-"""
-    bousseau_alg(tree::Tree, model::EvolutionModel[, strategy::ASRMethod])
-
-Apply the Bousseau *et. al.* algorithm to a copy of `tree`.
-For each node `n` and sequence position `pos`,
-up likelihoods will be in `n.data.pstates[pos].weights.u` and the down
-likelihoods in `n.data.pstates[pos].weights.v`.
-"""
-function bousseau_alg(tree, model, strategy = ASRMethod(; joint=false))
-    tc = copy(tree)
-    bousseau_alg!(tc, model, strategy)
-    return tc
-end
-
-# this is the same as in reconstruction.jl -- just an alias for clarity of the alg
-function down_likelihood!(tree, strategy; kwargs...)
-    return pull_weights_up!(tree.root, strategy; kwargs...)
-end
-
-#
-up_likelihood!(tree, strategy; kwargs...)  = up_likelihood!(tree.root, strategy; kwargs...)
-function up_likelihood!(
-    node::TreeNode{AState{q}}, strategy; holder = Vector{Float64}(undef, q)
-) where q
-    # compute up lk for `node`
-    if isroot(node)
-        fetch_up_lk_from_ancestor!(node.data.pstates[current_pos()], nothing)
-    else
-        fetch_up_lk!(node, current_pos(), holder)
-        normalize_weights!(node, current_pos())
-    end
-    # recursive call on children (only after we computed u)
-    for c in children(node)
-        up_likelihood!(c, strategy; holder)
-    end
-end
-
-"""
-    fetch_up_lk!(node::TreeNode, pos::Int)
-
-Let `A` be the ancestor of `node`.
-This computes the up-likelihood for the branch `A --> node`, by
-- calling `fetch_up_lk_from_ancestor!(node, A)`, which will use the up lk from `A`
-- calling `fetch_up_lk_from_child!(node, c)` for all `c ∈ children(A)` and `c ≢ node`,
-  which will use the down lk from `c`.
-
-If those quantities were initialized correctly, then the up likelihood at `node` is
-fully computed here, but not normalized.
-"""
-function fetch_up_lk!(node::TreeNode, pos::Int, holder::Vector{Float64})
-    A = ancestor(node)
-    fetch_up_lk_from_ancestor!(
-        node.data.pstates[pos],
-        A.data.pstates[pos],
-        holder,
-    )
-    for c in Iterators.filter(!=(node), children(A))
-        fetch_up_lk_from_child!(
-            node.data.pstates[pos],
-            c.data.pstates[pos],
-            holder,
-        )
-    end
-end
-
-function fetch_up_lk_from_ancestor!(
-    child::PosState{q}, parent::PosState{q}, lk_factor::Vector{Float64}
-) where q
-    # lk_factor = parent.weights.u' * parent.weights.T
-    mul!(lk_factor, parent.weights.T', parent.weights.u)
-    foreach(x -> child.weights.u[x] *= lk_factor[x], 1:q)
-    child.weights.Zu[] += parent.weights.Zu[]
-    return lk_factor
-end
-function fetch_up_lk_from_ancestor!(root::PosState, ::Nothing)
-    root.weights.u .*= root.weights.π
-    return root.weights.π
-end
-
-#=
-in reality, parent and child are brother nodes --
-I call it child because it is a child of the upper node of the branch represented by parent
-ie `(parent,child)A`, and the focus is the branch A --> parent
-=#
-function fetch_up_lk_from_child!(
-    parent::PosState, child::PosState, lk_factor::Vector{Float64}
-)
-    # lk_factor = child.weights.T * child.weights.v
-    mul!(lk_factor, child.weights.T, child.weights.v)
-    parent.weights.u .*= lk_factor
-    parent.weights.Zu[] += child.weights.Zv[]
-    return lk_factor
-end
 

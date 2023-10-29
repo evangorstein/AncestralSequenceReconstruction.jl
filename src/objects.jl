@@ -88,16 +88,17 @@ function normalize!(W::BranchWeights)
 end
 normalize_weights!(n::TreeNode, pos::Int) = normalize!(n.data.pstates[pos].weights)
 
-sample(W::BranchWeights{q}) where q = StatsBase.sample(1:q, Weights(W.v))
+# sample(W::BranchWeights{q}) where q = StatsBase.sample(1:q, Weights((W.u' * W.T)' .* W.v))
 
 #######################################################################################
 #################################### Position state ###################################
 #######################################################################################
 
-@kwdef mutable struct PosState{q} <: TreeNodeData
+@kwdef mutable struct PosState{q}
     pos::Int = 0
     c :: Union{Nothing, Int} = nothing # current state at this position
-    lk :: Float64 = 0.
+    lk::Float64 = 0.
+    posterior :: Float64 = 0.
     weights::BranchWeights{q} = BranchWeights{q}() # weights for the alg.
 end
 
@@ -106,6 +107,7 @@ function Base.copy(pstate::PosState{q}) where q
         pos=pstate.pos,
         c = pstate.c,
         lk = pstate.lk,
+        posterior = pstate.posterior,
         weights = copy(pstate.weights),
     )
 end
@@ -113,6 +115,7 @@ end
 function reset_state!(pstate::PosState)
     pstate.c = nothing
     pstate.lk = 0
+    pstate.posterior = 0
     reset_weights!(pstate.weights)
     return nothing
 end
@@ -181,6 +184,7 @@ end
 """
 @kwdef mutable struct ASRMethod
     joint::Bool = false
+    ML::Bool = false
     alphabet::Symbol = :aa
     verbosity::Int = 0
     optimize_branch_length = true

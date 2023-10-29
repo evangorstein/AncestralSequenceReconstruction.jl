@@ -22,6 +22,8 @@ include("evolutionary_models.jl")
 export EvolutionModel
 include("profile_model.jl")
 export ProfileModel, JukesCantor
+include("autoregressive_model.jl")
+export AutoRegressiveMovel
 
 include("sequences.jl")
 

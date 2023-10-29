@@ -1,54 +1,3 @@
-function infer_ancestral!(
-    tree::Tree{<:AState},
-    model::EvolutionModel,
-    strategy::ASRMethod,
-)
-    maxL = 0 # highest achievable likelihood
-    likelihood = 0 # achieved likelihood
-    for pos in model.ordering
-        # prepare tree
-        set_pos(pos)
-        reset_state!(tree, pos)
-        set_π!(tree, model, pos)
-        set_transition_matrix!(tree, model, pos)
-
-        # Propagate weights up to the root
-        pull_weights_up!(tree.root, strategy)
-
-        # send weights down and sample everything
-        # case of the root is handled here
-        send_weights_down!(tree.root, strategy)
-
-        W = tree.root.data.pstates[pos].weights
-        maxL += if strategy.joint
-            log(maximum(W.v)) + W.Zv[]
-        else
-            log(sum(W.v)) + W.Zv[]
-        end
-
-        for node in nodes(tree)
-            node.data.sequence[pos] = node.data.pstates[pos].c
-            likelihood += log(node.data.pstates[pos].lk)
-        end
-    end
-
-    return (
-        max_likelihood = maxL,
-        likelihood = likelihood,
-    )
-end
-"""
-    infer_ancestral(tree::Tree{<:AState}, model, strategy)
-
-Create a copy of `tree` and infer ancestral states at internal nodes.
-Leaves of `tree` should already be initialized with observed sequences.
-"""
-function infer_ancestral(tree::Tree{<:AState}, model, strategy)
-    tree_copy = copy(tree)
-    res = infer_ancestral!(tree_copy, model, strategy)
-    return tree_copy, res
-end
-
 function infer_ancestral(
     newick_file::AbstractString, fastafile::AbstractString, model, strategy;
     outfasta = nothing, outnewick = nothing,
@@ -94,31 +43,92 @@ function infer_ancestral(
 
     return tree, internal_sequences
 end
-
 """
-    tree_likelihood(tree::Tree, model::EvolutionModel, strategy::ASRMethod)
+    infer_ancestral(tree::Tree{<:AState}, model, strategy)
 
-Return the likelihood of the tree without performing the reconstruction.
+Create a copy of `tree` and infer ancestral states at internal nodes.
+Leaves of `tree` should already be initialized with observed sequences.
 """
-function tree_likelihood!(tree::Tree, model::EvolutionModel, strategy::ASRMethod)
-    L = 0
-    for pos in model.ordering
-        # prepare tree
-        set_pos(pos)
-        reset_state!(tree, pos)
-        set_transition_matrix!(tree, model, pos)
+function infer_ancestral(tree::Tree{<:AState}, model, strategy)
+    tree_copy = copy(tree)
+    res = infer_ancestral!(tree_copy, model, strategy)
+    return tree_copy, res
+end
 
-        # do the upward pass
-        pull_weights_up!(tree.root, strategy)
-
-        Wr = tree.root.data.pstates[pos].weights
-        if strategy.joint
-            L += log(maximum(prod, zip(Wr.π, Wr.v))) + Wr.Zv[]
-        else
-            L += log(Wr.π' * Wr.v) + Wr.Zv[]
-        end
+function infer_ancestral!(
+    tree::Tree{<:AState},
+    model::EvolutionModel,
+    strategy::ASRMethod,
+)
+    pruning_alg!(tree, model, strategy)
+    for n in internals(tree), pos in model.ordering
+        n.data.sequence[pos] = n.data.pstates[pos].c
     end
-    return L
+    return nothing # return value should be lk of reconstruction
+end
+
+function tree_likelihood!(tree::Tree, model::EvolutionModel, strategy::ASRMethod)
+    pruning_alg!(tree, model, strategy)
+    return likelihood(tree.root)
+end
+
+
+
+#######################################################################################
+####################################### Main alg ######################################
+#######################################################################################
+
+"""
+    pruning_alg!(tree, model::EvolutionModel, strategy::ASRMethod)
+
+Apply the pruning algorithm (Bousseau et. al.) to `tree` in place.
+"""
+function pruning_alg!(
+    tree::Tree{AState{q}}, model::EvolutionModel, strategy::ASRMethod;
+    set_state = true,
+) where q
+    if isa(model, AutoRegressiveModel) && !set_state
+        error("Inconsistent `model::AutoRegressiveModel` and `set_state=false`")
+    end
+
+    holder = Vector{Float64}(undef, q) # for in place mat mul
+    for pos in model.ordering
+        set_pos(pos) # set global var pos
+        reset_state!(tree, pos)
+        set_π!(tree, model, pos) # set equilibrium frequencies for all nodes
+        set_transition_matrix!(tree, model, pos) # set transition matrices for all branches
+
+        # compute down likelihood for all nodes
+        down_likelihood!(tree, strategy; holder)
+        # compute up likelihood
+        up_likelihood!(tree, strategy; holder)
+
+        # for each node n set n.data.pstates[pos].c :: Int, based on the strategy
+        set_state && set_states!(tree, pos, strategy)
+    end
+    return nothing
+end
+
+"""
+    pruning_alg(tree::Tree, model::EvolutionModel[, strategy::ASRMethod])
+
+Apply the Bousseau *et. al.* algorithm to a copy of `tree`.
+For each node `n` and sequence position `pos`,
+up likelihoods will be in `n.data.pstates[pos].weights.u` and the down
+likelihoods in `n.data.pstates[pos].weights.v`.
+"""
+function pruning_alg(tree, model, strategy)
+    tc = copy(tree)
+    pruning_alg!(tc, model, strategy)
+    return tc
+end
+
+#=
+## DOWN LIKELIHOOD
+=#
+
+function down_likelihood!(tree, strategy; kwargs...)
+    return pull_weights_up!(tree.root, strategy; kwargs...)
 end
 
 function pull_weights_up!(
@@ -146,50 +156,6 @@ function pull_weights_up!(
     return nothing
 end
 
-
-
-function send_weights_down!(node::TreeNode, strategy::ASRMethod)
-    if isroot(node)
-        pull_weights_from_anc!(node.data.pstates[current_pos()], nothing)
-        if strategy.joint
-            pick_node_state_joint!(node.data.pstates[current_pos()])
-        else
-            sample_node!(node.data.pstates[current_pos()])
-        end
-    else
-        ancestor_state = ancestor(node).data.pstates[current_pos()].c
-        if strategy.joint
-            pick_node_state_joint!(node.data.pstates[current_pos()], ancestor_state)
-        else
-            pull_weights_from_anc!(node.data.pstates[current_pos()], ancestor_state)
-            sample_node!(node.data.pstates[current_pos()], ancestor_state)
-        end
-    end
-
-    for child in children(node)
-        send_weights_down!(child, strategy)
-    end
-
-    return nothing
-end
-
-#######################################################################################
-################################ Operations on weights ################################
-#######################################################################################
-
-
-function set_leaf_state!(leaf::PosState, a::Int)
-    for b in eachindex(leaf.weights.v)
-        leaf.weights.v[b] = (b == a ? 1. : 0.)
-    end
-    leaf.c = a
-
-    return nothing
-end
-set_leaf_state!(leaf::AState, pos) = set_leaf_state!(leaf.pstates[pos], leaf.sequence[pos])
-
-
-
 """
     pull_weights_from_child!(parent::PosState, child::PosState, t, model, strategy)
 
@@ -201,7 +167,7 @@ function pull_weights_from_child!(
     strategy::ASRMethod,
     holder::Vector{Float64} = Vector{Float64}(undef, q),
 ) where q
-    return if strategy.joint
+    return if strategy.joint && strategy.ML
         pull_weights_from_child_joint!(parent, child)
     else
         pull_weights_from_child!(parent, child, holder)
@@ -232,46 +198,188 @@ function pull_weights_from_child_joint!(
     return nothing
 end
 
-"""
-    pull_weights_from_anc!(node::PosState, ancestor_state)
 
-Update weights of `node` using the state of its ancestor.
-If `ancestor_state::Nothing`, uses the equilibrium probability distribution at `node`.
-"""
-pull_weights_from_anc!(node::PosState, ::Nothing) = node.weights.v .*= node.weights.π
-function pull_weights_from_anc!(node::PosState, ancestor_state::Int)
-    node.weights.v .*= node.weights.T[ancestor_state, :]
+
+
+#=
+## UP LIKELIHOOD
+=#
+
+
+up_likelihood!(tree, strategy; kwargs...)  = up_likelihood!(tree.root, strategy; kwargs...)
+function up_likelihood!(
+    node::TreeNode{AState{q}}, strategy; holder = Vector{Float64}(undef, q)
+) where q
+    # compute up lk for `node`
+    if isroot(node)
+        fetch_up_lk_from_ancestor!(node.data.pstates[current_pos()], nothing)
+    else
+        fetch_up_lk!(node, current_pos(), holder)
+    end
+    normalize_weights!(node, current_pos())
+    # recursive call on children (only after we computed u)
+    for c in children(node)
+        up_likelihood!(c, strategy; holder)
+    end
 end
 
 """
-    pick_node_state_joint!(node::PosState, ancestor_state::Int)
+    fetch_up_lk!(node::TreeNode, pos::Int)
 
-Pick best state for `node` using the state of its ancestor. Only for the `joint` strategy.
-If `ancestor_state` is not specified, use state of maximum weight (for root). 
-"""
-function pick_node_state_joint!(node::PosState, ancestor_state::Int)
-    node.c = node.weights.c[ancestor_state]
-    node.lk = node.weights.T[ancestor_state, node.c]
-    return node.c
-end
-function pick_node_state_joint!(node::PosState)
-    node.c = argmax(node.weights.v)
-    node.lk = node.weights.π[node.c]
-    return node.c
-end
-"""
-    sample_node!(node::PosState, ancestor_state)
+Let `A` be the ancestor of `node`.
+This computes the up-likelihood for the branch `A --> node`, by
+- calling `fetch_up_lk_from_ancestor!(node, A)`, which will use the up lk from `A`
+- calling `fetch_up_lk_from_child!(node, c)` for all `c ∈ children(A)` and `c ≢ node`,
+  which will use the down lk from `c`.
 
-Sample a state for node using its weights `node.weights.v`.
-`ancestor_state` is used for computing the resulting probability of reconstructed state.
+If those quantities were initialized correctly, then the up likelihood at `node` is
+fully computed here, but not normalized.
 """
-function sample_node!(node::PosState, ancestor_state::Int)
-    node.c = sample(node.weights)
-    node.lk = node.weights.T[ancestor_state, node.c]
-    return node.c
+function fetch_up_lk!(node::TreeNode, pos::Int, holder::Vector{Float64})
+    A = ancestor(node)
+    fetch_up_lk_from_ancestor!(
+        node.data.pstates[pos],
+        A.data.pstates[pos],
+        holder,
+    )
+    for c in Iterators.filter(!=(node), children(A))
+        fetch_up_lk_from_child!(
+            node.data.pstates[pos],
+            c.data.pstates[pos],
+            holder,
+        )
+    end
 end
-function sample_node!(node::PosState)
-    node.c = sample(node.weights)
-    node.lk = node.weights.π[node.c]
+
+function fetch_up_lk_from_ancestor!(
+    child::PosState{q}, parent::PosState{q}, lk_factor::Vector{Float64}
+) where q
+    # lk_factor = parent.weights.u' * parent.weights.T
+    mul!(lk_factor, parent.weights.T', parent.weights.u)
+    foreach(x -> child.weights.u[x] *= lk_factor[x], 1:q)
+    child.weights.Zu[] += parent.weights.Zu[]
+    return lk_factor
 end
-sample_node!(node::PosState, ::Nothing) = sample_node!(node)
+function fetch_up_lk_from_ancestor!(root::PosState, ::Nothing)
+    root.weights.u .*= root.weights.π
+    return root.weights.π
+end
+
+#=
+in reality, parent and child are brother nodes --
+I call it child because it is a child of the upper node of the branch represented by parent
+ie `(parent,child)A`, and the focus is the branch A --> parent
+=#
+function fetch_up_lk_from_child!(
+    parent::PosState, child::PosState, lk_factor::Vector{Float64}
+)
+    # lk_factor = child.weights.T * child.weights.v
+    mul!(lk_factor, child.weights.T, child.weights.v)
+    parent.weights.u .*= lk_factor
+    parent.weights.Zu[] += child.weights.Zv[]
+    return lk_factor
+end
+
+
+#######################################################################################
+######################################## Utils ########################################
+#######################################################################################
+
+
+function likelihood(node::TreeNode)
+    return likelihood(node, map(s -> s.weights.T, node.data.pstates))
+end
+function likelihood(node::TreeNode, Ts::AbstractVector{<:AbstractMatrix{Float64}})
+    return sum(zip(node.data.pstates, Ts)) do (s, T)
+        log(s.weights.u' * T * s.weights.v) + s.weights.Zv[] + s.weights.Zu[]
+    end
+end
+
+function set_leaf_state!(leaf::PosState, a::Int)
+    for b in eachindex(leaf.weights.v)
+        leaf.weights.v[b] = (b == a ? 1. : 0.)
+    end
+    leaf.c = a
+
+    return nothing
+end
+set_leaf_state!(leaf::AState, pos) = set_leaf_state!(leaf.pstates[pos], leaf.sequence[pos])
+
+function posterior(p::PosState)
+    w = (p.weights.u' * p.weights.T)' .* p.weights.v
+    return w / sum(w)
+end
+function posterior(p::PosState, anc_state::Int)
+    w = p.weights.u[anc_state] * p.weights.T[anc_state,:] .* p.weights.v
+    return w / sum(w)
+end
+
+"""
+    pick_state_ML!(p::PosState{q}) where q
+
+Pick marginal ML state at `p`.
+"""
+function pick_ML_state!(p::PosState{q}) where q
+    P = posterior(p)
+    lk, a = findmax(P)
+    p.c = a
+    p.posterior = lk
+    return a
+end
+
+"""
+    sample_state!(pstate::PosState)
+
+Marginally sample state, without taking ancestor state into account.
+"""
+function sample_state!(p::PosState)
+    P = posterior(p)
+    c = StatsBase.sample(Weights(P))
+    p.c = c
+    p.posterior = P[c]
+    return c
+end
+sample_state!(pstate::PosState, ::Nothing) = sample_state!(pstate)
+
+"""
+    sample_state!(pstate::PosState, anc_state)
+
+Sample state at `pstate`, taking into account sampled ancestral state.
+"""
+function sample_state!(p::PosState, anc_state::Int)
+    P = posterior(p, anc_state)
+    c = StatsBase.sample(Weights(P))
+    p.c = c
+    p.posterior = P[c]
+    return c
+end
+
+function set_state!(pstate::PosState, anc_state::Union{Nothing, Int}, strategy::ASRMethod)
+    if strategy.joint && strategy.ML
+        # the joint ML reconstruction
+        # this only makes sense if the alg from Pupko et. al. has been used
+        # will do later
+    elseif !strategy.joint && strategy.ML
+        # the marginal ML reconstruction: pick max ML at p
+        pick_ML_state!(pstate)
+    elseif strategy.joint && !strategy.ML
+        # sample at p taking the ancestor into account
+        sample_state!(pstate, anc_state)
+    elseif !strategy.joint && !strategy.ML
+        # marginal ML: sample at p directly from the likelihood
+        sample_state!(pstate)
+        #
+    end
+
+    return pstate.c, pstate.posterior
+end
+
+
+function set_state!(node::TreeNode, anc_state, pos::Int, strategy)
+    a, _ = set_state!(node.data.pstates[pos], anc_state, strategy)
+    for c in children(node)
+        set_state!(c, a, pos, strategy)
+    end
+    return nothing
+end
+set_states!(tree::Tree, pos::Int, strategy) = set_state!(tree.root, nothing, pos, strategy)
