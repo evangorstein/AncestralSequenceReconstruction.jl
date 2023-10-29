@@ -183,4 +183,5 @@ end
     joint::Bool = false
     alphabet::Symbol = :aa
     verbosity::Int = 0
+    optimize_branch_length = true
 end

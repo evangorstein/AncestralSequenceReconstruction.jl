@@ -93,8 +93,8 @@ function optimize_branch_lengths_cycle!(
             ASR.set_transition_matrix!(n.data, model, branch_length(n), i)
         end
         @debug "New lk" ASR.bousseau_likelihood(n)
-        # update_neighbours!(n; anc=true, sisters=true)
         bousseau_alg!(tree, model.ordering, strategy)
+
         @debug "Ancestor $(label(ancestor(n))) lk" ASR.bousseau_likelihood(ancestor(n))
     end
 
@@ -284,6 +284,10 @@ for each node are **already set**.
 function bousseau_alg!(
     tree::Tree, model::EvolutionModel, strategy::ASRMethod = ASRMethod(; joint=false)
 )
+    if strategy.joint
+        error("For now, `bousseau_alg` is only for marginal: `strategy.joint=false`")
+    end
+
     for pos in model.ordering
         set_π!(tree, model, pos)
         set_transition_matrix!(tree, model, pos)

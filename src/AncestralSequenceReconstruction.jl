@@ -5,6 +5,7 @@ export ASR
 
 import Base: copy, length
 
+using Accessors
 using DelimitedFiles
 using FASTX
 using LinearAlgebra

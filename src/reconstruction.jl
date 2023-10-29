@@ -69,7 +69,10 @@ function infer_ancestral(
     sequences_to_tree!(tree, seqmap)
 
     # re-infer branch length -- should be a strategy option
-    optimize_branch_length!(tree, model, strategy)
+    if strategy.optimize_branch_length
+        opt_strat = @set strategy.joint=false
+        optimize_branch_length!(tree, model, opt_strat)
+    end
 
     # reconstruct
     infer_ancestral!(tree, model, strategy)
