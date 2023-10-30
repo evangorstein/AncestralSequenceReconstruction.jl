@@ -24,22 +24,21 @@ strategy_joint = ASR.ASRMethod(; joint=true, ML = true)
         exp(ASR.tree_likelihood!(tree, model, strategy_marginal)), lk_fel_marginal;
         rtol=1e-5
     )
-    # @test isapprox(
-    #     exp(ASR.tree_likelihood!(tree, model, strategy_joint)), lk_fel_joint;
-    #     rtol=1e-4
-    # )
+    @test isapprox(
+        exp(ASR.tree_likelihood!(tree, model, strategy_joint)), lk_fel_joint;
+        rtol=1e-4
+    )
 
-    t, res = ASR.infer_ancestral(tree, model, strategy_marginal)
+    t = ASR.infer_ancestral(tree, model, strategy_marginal)
     rec_marginal = map(["R", "I1", "I2", "I3"]) do label
         ASR.intvec_to_sequence(t[label].data.sequence; alphabet=:nt)
     end
     @test rec_marginal == ["C", "A", "G", "C"]
-    # @test res.max_likelihood ≈ res.likelihood # not working yet
-    # @test isapprox(exp(res.max_likelihood), lk_fel_joint; rtol=1e-4)
+
+    t = ASR.infer_ancestral(tree, model, strategy_joint)
+    rec_joint = map(["R", "I1", "I2", "I3"]) do label
+        ASR.intvec_to_sequence(t[label].data.sequence; alphabet=:nt)
+    end
+    @test rec_joint == ["G", "A", "G", "G"]
 end
 
-# @testset "Felsenstein Bousseau" begin
-#     t = ASR.bousseau_alg(tree, model, strategy_marginal)
-#     lk = log(lk_fel_marginal)
-#     @test all(≈(lk; rtol = 1e-4), map(ASR.bousseau_likelihood, nodes(t)))
-# end

@@ -52,7 +52,7 @@ Leaves of `tree` should already be initialized with observed sequences.
 function infer_ancestral(tree::Tree{<:AState}, model, strategy)
     tree_copy = copy(tree)
     res = infer_ancestral!(tree_copy, model, strategy)
-    return tree_copy, res
+    return tree_copy
 end
 
 function infer_ancestral!(
@@ -69,7 +69,7 @@ end
 
 function tree_likelihood!(tree::Tree, model::EvolutionModel, strategy::ASRMethod)
     pruning_alg!(tree, model, strategy)
-    return likelihood(tree.root)
+    return likelihood(tree.root, strategy)
 end
 
 
@@ -97,6 +97,7 @@ function pruning_alg!(
         reset_state!(tree, pos)
         set_π!(tree, model, pos) # set equilibrium frequencies for all nodes
         set_transition_matrix!(tree, model, pos) # set transition matrices for all branches
+
 
         # compute down likelihood for all nodes
         down_likelihood!(tree, strategy; holder)
@@ -168,13 +169,13 @@ function pull_weights_from_child!(
     holder::Vector{Float64} = Vector{Float64}(undef, q),
 ) where q
     return if strategy.joint && strategy.ML
-        pull_weights_from_child_joint!(parent, child)
+        pull_weights_from_child_max!(parent, child)
     else
-        pull_weights_from_child!(parent, child, holder)
+        pull_weights_from_child_sum!(parent, child, holder)
     end
 end
 
-function pull_weights_from_child!(
+function pull_weights_from_child_sum!(
     parent::PosState{q}, child::PosState{q}, lk_factor,
 ) where q
     # lk_factor = child.weights.T * child.weights.v
@@ -183,7 +184,7 @@ function pull_weights_from_child!(
     parent.weights.Zv[] += child.weights.Zv[]
     return lk_factor
 end
-function pull_weights_from_child_joint!(
+function pull_weights_from_child_max!(
     parent::PosState{q}, child::PosState{q},
 ) where q
     for r in 1:q # loop over parent state
@@ -212,9 +213,9 @@ function up_likelihood!(
 ) where q
     # compute up lk for `node`
     if isroot(node)
-        fetch_up_lk_from_ancestor!(node.data.pstates[current_pos()], nothing)
+        fetch_up_lk_root!(node.data.pstates[current_pos()], strategy)
     else
-        fetch_up_lk!(node, current_pos(), holder)
+        fetch_up_lk!(node, current_pos(), holder, strategy)
     end
     normalize_weights!(node, current_pos())
     # recursive call on children (only after we computed u)
@@ -223,62 +224,133 @@ function up_likelihood!(
     end
 end
 
+function fetch_up_lk_root!(root::PosState, strategy::ASRMethod)
+    return if strategy.joint && strategy.ML
+        fetch_up_lk_root_max!(root)
+    else
+        fetch_up_lk_root_sum!(root)
+    end
+end
+function fetch_up_lk_root_max!(root::PosState)
+    root.weights.u .= 1.
+    root.weights.Zu[] = 0.
+    return nothing
+end
+function fetch_up_lk_root_sum!(root::PosState)
+    root.weights.u = root.weights.π
+    root.weights.Zu[] = 0.
+    return nothing
+end
+
 """
-    fetch_up_lk!(node::TreeNode, pos::Int)
+    fetch_up_lk!(node::TreeNode, pos::Int, holder::Vector{Float64}, strategy)
 
 Let `A` be the ancestor of `node`.
 This computes the up-likelihood for the branch `A --> node`, by
 - calling `fetch_up_lk_from_ancestor!(node, A)`, which will use the up lk from `A`
-- calling `fetch_up_lk_from_child!(node, c)` for all `c ∈ children(A)` and `c ≢ node`,
+- calling `fetch_up_lk_from_child!(node, c)` for all `c ∈ children(A)` and `c ≠ node`,
   which will use the down lk from `c`.
 
 If those quantities were initialized correctly, then the up likelihood at `node` is
 fully computed here, but not normalized.
 """
-function fetch_up_lk!(node::TreeNode, pos::Int, holder::Vector{Float64})
+function fetch_up_lk!(node::TreeNode, pos::Int, holder::Vector{Float64}, strategy)
     A = ancestor(node)
     fetch_up_lk_from_ancestor!(
         node.data.pstates[pos],
         A.data.pstates[pos],
         holder,
+        strategy,
     )
     for c in Iterators.filter(!=(node), children(A))
         fetch_up_lk_from_child!(
             node.data.pstates[pos],
             c.data.pstates[pos],
             holder,
+            strategy,
         )
     end
 end
 
+
+
 function fetch_up_lk_from_ancestor!(
+    child::PosState, parent::PosState, lk_factor::Vector{Float64}, strategy::ASRMethod
+)
+    return if strategy.joint && strategy.ML
+        fetch_up_lk_from_ancestor_max!(child, parent, lk_factor)
+    else
+        fetch_up_lk_from_ancestor_sum!(child, parent, lk_factor)
+    end
+end
+
+function fetch_up_lk_from_ancestor_max!(
     child::PosState{q}, parent::PosState{q}, lk_factor::Vector{Float64}
 ) where q
-    # lk_factor = parent.weights.u' * parent.weights.T
+    # loop over child state and find best ancestral state
+    for c in 1:q
+        lk_factor, a_state = findmax(1:q) do r
+            parent.weights.T[r,c] * parent.weights.u[r]
+        end
+        child.weights.u[c] *= lk_factor
+        # parent.weights.cu[c] = a_state # best state at branch above parent given c at child
+    end
+    child.weights.Zu[] += parent.weights.Zu[]
+    return nothing
+end
+
+function fetch_up_lk_from_ancestor_sum!(
+    child::PosState{q}, parent::PosState{q}, lk_factor::Vector{Float64}
+) where q
     mul!(lk_factor, parent.weights.T', parent.weights.u)
     foreach(x -> child.weights.u[x] *= lk_factor[x], 1:q)
     child.weights.Zu[] += parent.weights.Zu[]
-    return lk_factor
-end
-function fetch_up_lk_from_ancestor!(root::PosState, ::Nothing)
-    root.weights.u .*= root.weights.π
-    return root.weights.π
+    return nothing
 end
 
 #=
 in reality, parent and child are brother nodes --
 I call it child because it is a child of the upper node of the branch represented by parent
-ie `(parent,child)A`, and the focus is the branch A --> parent
+ie newick `(parent,child)A`, the focus is the branch A --> parent,
+and we look at contribution A --> child
 =#
 function fetch_up_lk_from_child!(
+    parent::PosState, child::PosState, lk_factor, strategy::ASRMethod
+)
+    return if strategy.joint && strategy.ML
+        fetch_up_lk_from_child_max!(parent, child, lk_factor)
+    else
+        fetch_up_lk_from_child_sum!(parent, child, lk_factor)
+    end
+end
+
+function fetch_up_lk_from_child_max!(
+    parent::PosState{q}, child::PosState{q}, lk_factor::Vector{Float64}
+) where q
+    # loop over states at parent
+    for a in 1:q
+        # best child state `c` given anc(parent) state `a`
+        lk_factor, child_state = findmax(1:q) do c
+            child.weights.T[a,c] * child.weights.v[c]
+        end
+        parent.weights.u[a] *= lk_factor
+        # no need to set child.weights.c : already done in the down_lk pass
+    end
+    parent.weights.Zu[] += child.weights.Zv[]
+    return nothing
+end
+
+function fetch_up_lk_from_child_sum!(
     parent::PosState, child::PosState, lk_factor::Vector{Float64}
 )
     # lk_factor = child.weights.T * child.weights.v
     mul!(lk_factor, child.weights.T, child.weights.v)
     parent.weights.u .*= lk_factor
     parent.weights.Zu[] += child.weights.Zv[]
-    return lk_factor
+    return nothing
 end
+
+
 
 
 #######################################################################################
@@ -286,12 +358,26 @@ end
 #######################################################################################
 
 
-function likelihood(node::TreeNode)
-    return likelihood(node, map(s -> s.weights.T, node.data.pstates))
+function likelihood(node::TreeNode, strategy::ASRMethod)
+    return if strategy.joint && strategy.ML
+        likelihood_max(node, map(s -> s.weights.T, node.data.pstates))
+    else
+        likelihood(node, map(s -> s.weights.T, node.data.pstates))
+    end
 end
 function likelihood(node::TreeNode, Ts::AbstractVector{<:AbstractMatrix{Float64}})
     return sum(zip(node.data.pstates, Ts)) do (s, T)
         log(s.weights.u' * T * s.weights.v) + s.weights.Zv[] + s.weights.Zu[]
+    end
+end
+function likelihood_max(node::TreeNode, Ts::AbstractVector{<:AbstractMatrix{Float64}})
+    q = size(first(Ts), 1)
+    XY = [(x,y) for x in 1:q for y in 1:q]
+    return sum(zip(node.data.pstates, Ts)) do (s, T)
+        lk = maximum(XY) do (x,y)
+            s.weights.u[x] * s.weights.T[x,y] * s.weights.v[y]
+        end
+        log(lk) + s.weights.Zv[] + s.weights.Zu[]
     end
 end
 
@@ -327,6 +413,19 @@ function pick_ML_state!(p::PosState{q}) where q
     return a
 end
 
+function pick_ML_state_joint!(p::PosState{q}) where q
+    XY = [(x,y) for x in 1:q for y in 1:q]
+    lk, idx = findmax(XY) do (x,y)
+        p.weights.u[x] * p.weights.T[x,y] * p.weights.v[y]
+    end
+
+    p.c = XY[idx][2]
+    x = XY[idx][1]
+    p.posterior = lk / sum(p.weights.u[x] * p.weights.T[x,:]' * p.weights.v)
+
+    return p.c
+end
+
 """
     sample_state!(pstate::PosState)
 
@@ -358,7 +457,7 @@ function set_state!(pstate::PosState, anc_state::Union{Nothing, Int}, strategy::
     if strategy.joint && strategy.ML
         # the joint ML reconstruction
         # this only makes sense if the alg from Pupko et. al. has been used
-        # will do later
+        pick_ML_state_joint!(pstate)
     elseif !strategy.joint && strategy.ML
         # the marginal ML reconstruction: pick max ML at p
         pick_ML_state!(pstate)
@@ -383,3 +482,11 @@ function set_state!(node::TreeNode, anc_state, pos::Int, strategy)
     return nothing
 end
 set_states!(tree::Tree, pos::Int, strategy) = set_state!(tree.root, nothing, pos, strategy)
+
+
+# useful for debugging
+let
+    obs_node = nothing
+    global set_obs_node(n) = (obs_node = n)
+    global get_obs_node() = obs_node
+end

@@ -8,13 +8,13 @@ function optimize_branch_length!(
     # initial state
     verbose() > 1 && @info "First pass of likelihood computation..."
     t = @elapsed pruning_alg!(tree, model, strategy; set_state=false)
-    lk = [likelihood(tree.root)]
+    lk = [likelihood(tree.root, strategy)]
     verbose() > 1 && @info "Initial lk $(lk[1]) - $t seconds"
 
     # first pass
     verbose() > 1 && @info "First pass of branch length opt..."
     t = @elapsed optimize_branch_lengths_cycle!(tree, model, strategy)
-    push!(lk, likelihood(tree.root))
+    push!(lk, likelihood(tree.root, strategy))
     lk[end] < lk[end-1] && @warn "Likelihood decreased during optimization: something's wrong"
     verbose() > 1 && @info "Likelihood $(lk) - $t seconds"
 
@@ -22,7 +22,7 @@ function optimize_branch_length!(
     while (lk[end-1] - lk[end]) / lk[end-1] > rconv && n < (ncycles - 1)
         verbose() > 1 && @info "Branch length opt $(n+2)..."
         t = @elapsed optimize_branch_lengths_cycle!(tree, model, strategy)
-        push!(lk, likelihood(tree.root))
+        push!(lk, likelihood(tree.root, strategy))
         lk[end] < lk[end-1] && @warn "Likelihood decreased during optimization: something's wrong"
         verbose() > 1 && @info "Likelihood $(lk) - $t seconds"
         n += 1
