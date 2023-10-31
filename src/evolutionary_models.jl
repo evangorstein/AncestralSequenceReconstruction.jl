@@ -52,6 +52,13 @@ function set_transition_matrix!(tree::Tree, model::EvolutionModel, pos::Int)
     return nothing
 end
 
+"""
+    ordering(::EvolutionModel)
+
+Order in which sequence sites are processed.
+"""
+ordering(::EvolutionModel) = nothing
+
 
 ###################################################################################
 ###################################### USEFUL #####################################

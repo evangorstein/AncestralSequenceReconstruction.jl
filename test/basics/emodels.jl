@@ -1,4 +1,6 @@
-####### MODELS #######
+
+
+####### ProfileModel #######
 
 L, q = (3, 2)
 Pmat = [
@@ -8,16 +10,16 @@ Pmat = [
 Pvec = [[1/3, 2/3], [1/2, 1/2], [1/4, 3/4]]
 @testset "ProfileModel basics" begin
     I2 = ASR.ProfileModel(Pvec)
-    @test length(I2.ordering) == L
+    @test length(ASR.ordering(I2)) == L
     @test typeof(I2) == ASR.ProfileModel{q}
 
     I1 = ASR.ProfileModel(Pmat)
-    @test length(I1.ordering) == L
+    @test length(ASR.ordering(I1)) == L
     @test typeof(I1) == ASR.ProfileModel{q}
 
 
     @test I1.P == I2.P
-    @test I2.ordering == I2.ordering
+    @test ASR.ordering(I2) == ASR.ordering(I2)
 
     @test_throws AssertionError ASR.ProfileModel(Pvec .+ [0.01*rand(q) for _ in 1:L]) # should not use rand but well...
     @test_throws AssertionError ASR.ProfileModel(Pmat .+ rand(q, L))
@@ -25,3 +27,58 @@ Pvec = [[1/3, 2/3], [1/2, 1/2], [1/4, 3/4]]
     JC = ASR.JukesCantor(1)
     @test JC.P[1] == 1/4 * ones(Float64, 4)
 end
+
+####### AutoregressiveModel #######
+
+dir = dirname(@__FILE__)
+dir = "basics/"
+
+using AncestralSequenceReconstruction
+using ArDCA
+using JLD2
+using Test
+using TreeTools
+
+
+q = 21
+L = 112
+tree = read_tree(dir * "/tree_long_branches.nwk"; node_data_type = () -> ASR.AState{q}(;L))
+ASR.fasta_to_tree!(tree, dir * "/alignment_long_branches.fasta")
+
+arnet = JLD2.load(dir * "/arnet.jld2")["arnet"] # PF00072
+ar_model = AutoRegressiveModel(arnet)
+x1 = convert(Vector{Int}, tree["A"].data.sequence);
+x2 = convert(Vector{Int}, tree["B"].data.sequence);
+local_p_x1 = arnet(x1);
+local_p_x2 = arnet(x2);
+
+@testset "local field" begin
+    t = copy(tree)
+
+    for i in ASR.ordering(ar_model)
+        ASR.reset_state!(t, i)
+        ASR.set_π!(t["A"].data, ar_model, i)
+        ASR.set_π!(t["B"].data, ar_model, i)
+    end
+
+    for i in 1:L
+        @test local_p_x1[i] ≈ t["A"].data.pstates[i].weights.π[x1[i]]
+        @test local_p_x2[i] ≈ t["B"].data.pstates[i].weights.π[x2[i]]
+    end
+end
+
+@testset "set π internal node" begin
+    t = copy(tree)
+    perm = ASR.ordering(ar_model)
+    i = perm[1]
+    j = perm[2]
+
+    ASR.set_π!(t["R"].data, ar_model, i)
+    @test t["R"].data.pstates[i].weights.π ≈ arnet.p0
+
+    @test_throws ErrorException ASR.set_π!(t["R"].data, ar_model, j)
+    t["R"].data.pstates[i].c = x1[i]
+    @test isnothing(ASR.set_π!(t["R"].data, ar_model, j))
+    @test local_p_x1[j] ≈ t["R"].data.pstates[j].weights.π[x1[j]]
+end
+

@@ -17,7 +17,7 @@ function infer_ancestral(
     tree = read_tree(newick_file; node_data_type = T)
     sequences_to_tree!(tree, seqmap)
 
-    # re-infer branch length -- should be a strategy option
+    # re-infer branch length
     if strategy.optimize_branch_length
         opt_strat = @set strategy.joint=false
         optimize_branch_length!(tree, model, opt_strat)
@@ -61,7 +61,7 @@ function infer_ancestral!(
     strategy::ASRMethod,
 )
     pruning_alg!(tree, model, strategy)
-    for n in internals(tree), pos in model.ordering
+    for n in internals(tree), pos in ordering(model)
         n.data.sequence[pos] = n.data.pstates[pos].c
     end
     return nothing # return value should be lk of reconstruction
@@ -92,7 +92,7 @@ function pruning_alg!(
     end
 
     holder = Vector{Float64}(undef, q) # for in place mat mul
-    for pos in model.ordering
+    for pos in ordering(model)
         set_pos(pos) # set global var pos
         reset_state!(tree, pos)
         set_π!(tree, model, pos) # set equilibrium frequencies for all nodes

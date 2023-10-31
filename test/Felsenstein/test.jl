@@ -1,6 +1,6 @@
 dir = dirname(@__FILE__)
-
 dir = "Felsenstein/"
+
 using AncestralSequenceReconstruction
 using Test
 using TreeTools

@@ -8,7 +8,6 @@
 ```
 P :: SVector{q, Float64}
 μ :: Float64
-ordering :: Vector{Int}
 ```
 An independent model without using the genetic code.
 Ordering is irrelevant in this case, defaults to `1:L`.
@@ -16,17 +15,16 @@ Ordering is irrelevant in this case, defaults to `1:L`.
 @kwdef mutable struct ProfileModel{q} <: EvolutionModel{q}
     P :: Vector{Vector{Float64}}
     μ :: Float64 = 1.
-    ordering :: Vector{Int} = collect(1:length(P))
     with_code :: Bool = false
     genetic_code :: Matrix{Float64} = zeros(Float64, q, q)
-    function ProfileModel{q}(P, μ, ordering, with_code, genetic_code) where q
+    function ProfileModel{q}(P, μ, with_code, genetic_code) where q
         for p in P
             @assert isapprox(sum(p), 1) "Probabilities must sum to one - got $(sum(p))"
         end
-        @assert length(ordering) == length(P) "Dimension mismatch for `P` and ordering vector"
+        @assert all(p -> length(p) == q, P) "Expected probability vectors of length $q"
         @assert μ>0 "Mutation rate should be strictly positive"
         @assert !with_code || q == length(AA_ALPHABET) "Can only use genetic_code for amino-acids (got q=$q)"
-        return new{q}(P, μ, ordering, with_code, genetic_code)
+        return new{q}(P, μ, with_code, genetic_code)
     end
 end
 """
@@ -62,6 +60,11 @@ Equivalent to `ProfileModel(map(_ -> [1/4, 1/4, 1/4, 1/4], 1:L); μ = 4/3)`.
 """
 JukesCantor(L::Int) = ProfileModel(map(_ -> [1/4, 1/4, 1/4, 1/4], 1:L); μ = 4/3)
 
+#=
+########## ordering ##########
+=#
+
+ordering(model::ProfileModel) = 1:length(model)
 
 #=
 ########## set_π ##########
@@ -79,6 +82,7 @@ set_π!(astate::AState, model::ProfileModel, pos::Int) = set_π!(astate.pstates[
 ########## set_transition_matrix ##########
 =#
 function set_transition_matrix_gencode!(T, model::ProfileModel{q}, t, pos) where q
+    @warn "Not implemented yet!"
     return T
 end
 

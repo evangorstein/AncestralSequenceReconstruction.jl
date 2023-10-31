@@ -6,6 +6,7 @@ export ASR
 import Base: copy, length
 
 using Accessors
+using ArDCA
 using DelimitedFiles
 using FASTX
 using LinearAlgebra
@@ -23,7 +24,7 @@ export EvolutionModel
 include("profile_model.jl")
 export ProfileModel, JukesCantor
 include("autoregressive_model.jl")
-export AutoRegressiveMovel
+export AutoRegressiveModel
 
 include("sequences.jl")
 
