@@ -82,10 +82,10 @@ set_π!(astate::AState, model::ProfileModel, pos::Int) = set_π!(astate.pstates[
 """
     set_transition_matrix!(T::Matrix, model::ProfileModel, t, pos)
 
-Convenience for `set_transition_matrix!(T, t, model[pos])`
+Convenience for `set_transition_matrix!(T, model.μ*t, model[pos])`
 """
 function set_transition_matrix!(T::Matrix, model::ProfileModel, t, pos)
-    return set_transition_matrix!(T, t, model.P[pos])
+    return set_transition_matrix!(T, model.μ*t, model.P[pos])
 end
 
 #=
