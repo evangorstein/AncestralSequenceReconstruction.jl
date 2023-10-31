@@ -95,7 +95,7 @@ function pruning_alg!(
     for pos in model.ordering
         set_pos(pos) # set global var pos
         reset_state!(tree, pos)
-        set_π!(tree, model, pos) # set equilibrium frequencies for all nodes
+        # set_π!(tree, model, pos) # set equilibrium frequencies for all nodes
         set_transition_matrix!(tree, model, pos) # set transition matrices for all branches
 
 

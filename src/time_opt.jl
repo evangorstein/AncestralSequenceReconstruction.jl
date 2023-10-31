@@ -89,7 +89,9 @@ function optimize_branch_lengths_cycle!(
 
         # recompute the transition matrix for the branch above n
         foreach(1:L) do i
-            ASR.set_transition_matrix!(n.data, model, branch_length(n), i)
+            ASR.set_transition_matrix!(
+                n.data, model, branch_length(n), i; set_equilibrium_frequencies=false
+            )
         end
         @debug "New lk" ASR.likelihood(n)
         pruning_alg!(tree, model, strategy; set_state=false)

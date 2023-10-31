@@ -78,46 +78,15 @@ set_π!(astate::AState, model::ProfileModel, pos::Int) = set_π!(astate.pstates[
 #=
 ########## set_transition_matrix ##########
 =#
-function set_transition_matrix_gencode!(T, model::ProfileModel{q}, t, pos) where q
-    return T
-end
 
-function set_transition_matrix_simple!(T, model::ProfileModel{q}, t, pos) where q
-    ν = exp(-model.μ*t)
-    π = model.P[pos]
-    for b in 1:q
-        T[:,b] .= (1-ν) * π[b]
-        T[b,b] += ν
-    end
-    return T
-end
+"""
+    set_transition_matrix!(T::Matrix, model::ProfileModel, t, pos)
 
-function set_transition_matrix!(
-    T::Matrix{Float64},
-    model::ProfileModel{q},
-    t::Number,
-    pos::Int,
-) where q
-    return if model.with_code
-        set_transition_matrix_gencode!(T, model, t, pos)
-    else
-        set_transition_matrix_simple!(T, model, t, pos)
-    end
+Convenience for `set_transition_matrix!(T, t, model[pos])`
+"""
+function set_transition_matrix!(T::Matrix, model::ProfileModel, t, pos)
+    return set_transition_matrix!(T, t, model.P[pos])
 end
-# for the root: TreeTools has branch_length(tree.root) == missing
-function set_transition_matrix!(T::Matrix, model::ProfileModel, t::Missing, pos::Int)
-    set_transition_matrix!(T, model, Inf, pos)
-end
-# π useless for this model
-function set_transition_matrix!(T::Matrix, model::ProfileModel, t, pos, π)
-    set_transition_matrix!(T, model, t, pos)
-end
-
-function set_transition_matrix!(astate::AState, model::EvolutionModel, t, pos::Int)
-    # fallback to the form (T::Matrix, model, t, pos)
-    return set_transition_matrix!(astate.pstates[pos].weights.T, model, t, pos)
-end
-
 
 #=
 ########## set_transition_rate_matrix ##########

@@ -16,46 +16,12 @@ abstract type EvolutionModel{q} end
 Set equilibrium frequencies of for ancestral state `astate` at site `pos` using `model`.
 """
 function set_π! end
-"""
-    set_π!(tree::Tree, model::EvolutionModel, pos::Int)
-
-Set equilibrium frequencies at site `pos` for all nodes.
-"""
-function set_π!(tree::Tree, model::EvolutionModel, pos::Int)
-    foreach(nodes(tree)) do n
-        set_π!(n.data, model, pos)
-    end
-    return nothing
-end
-
-"""
-    set_transition_matrix!(T::Matrix{Float64}, model::EvolutionModel, t, pos, π)
-    set_transition_matrix!(astate::AState, model::EvolutionModel, t, pos)
-
-Set transition matrix to the input ancestral state, using branch length `t`.
-In the first form, store the output in matrix `T`.
-In the second form, store in  `astate.pstates[pos].weights.T`.
-
-*Note*: In the first form, the `π` argument (equilibrium frequencies) is needed if
-we are using ArDCA.
-"""
-function set_transition_matrix! end
-"""
-    set_transition_matrix!(tree::Tree, model::EvolutionModel, pos::Int)
-
-Set the transition matrix for all branches in `tree` at seqeunce position `pos`.
-"""
-function set_transition_matrix!(tree::Tree, model::EvolutionModel, pos::Int)
-    foreach(nodes(tree)) do n
-        set_transition_matrix!(n.data, model, branch_length(n), pos)
-    end
-    return nothing
-end
 
 
 ###################################################################################
 ###################################### USEFUL #####################################
 ###################################################################################
+
 
 
 """
@@ -92,6 +58,95 @@ function transition_rate_matrix(model::EvolutionModel{q}, pos, π=ones(Float64, 
     return Q
 end
 
+
+###################################################################################
+################################# GENERAL FUNCTIONS ###############################
+###################################################################################
+
+"""
+    set_π!(tree::Tree, model::EvolutionModel, pos::Int)
+
+Set equilibrium frequencies at site `pos` for all nodes.
+"""
+function set_π!(tree::Tree, model::EvolutionModel, pos::Int)
+    foreach(nodes(tree)) do n
+        set_π!(n.data, model, pos)
+    end
+    return nothing
+end
+
+"""
+    set_transition_matrix!(T::Matrix, t, π; with_code, gen_code)
+
+Set transition matrix with eq. frequencies π in place.
+If provided, `gen_code` is a `Matrix`.
+"""
+function set_transition_matrix!(
+    T::Matrix, t::Number, π::AbstractVector;
+    with_code=false, gen_code = nothing,
+)
+    return if with_code
+        isnothing(gen_code) && error("Must provide genetic code! (`; gen_code = Matrix...)")
+        set_transition_matrix_gencode!(T, t, π, gen_code)
+    else
+        set_transition_matrix_simple!(T, t, π)
+    end
+end
+function set_transition_matrix!(T::Matrix, t::Missing, π::AbstractVector; kwargs...)
+    return set_transition_matrix!(T, Inf, π; kwargs...)
+end
+
+function set_transition_matrix_gencode!(T, t, π, gen_code)
+    error("Not yet implemented!")
+    return T
+end
+
+function set_transition_matrix_simple!(T, t, π)
+    ν = exp(-t)
+    q = length(π)
+    for b in 1:q
+        T[:,b] .= (1-ν) * π[b]
+        T[b,b] += ν
+    end
+    return T
+end
+
+"""
+    set_transition_matrix!(
+        astate::AState, model::EvolutionModel, t, pos;
+        set_equilibrium_frequencies=true
+    )
+
+Set transition matrix to the input ancestral state, using branch length `t`.
+Store result in `astate.pstates[pos].weights.T`.
+
+## Note
+- calls `set_π!(astate, model, pos)` if needed
+- then uses `set_transition_matrix!(astate.T, model.μ*t, π; gen code from model)`
+"""
+function set_transition_matrix!(
+    astate::AState, model::EvolutionModel, t, pos;
+    set_equilibrium_frequencies=true
+)
+    set_equilibrium_frequencies && set_π!(astate, model, pos)
+    π = astate.pstates[pos].weights.π
+    return set_transition_matrix!(
+        astate.pstates[pos].weights.T, model.μ*t, π;
+        with_code = model.with_code, gen_code = model.genetic_code,
+    )
+end
+
+"""
+    set_transition_matrix!(tree::Tree, model::EvolutionModel, pos::Int)
+
+Set the transition matrix for all branches in `tree` at seqeunce position `pos`.
+"""
+function set_transition_matrix!(tree::Tree, model::EvolutionModel, pos::Int)
+    foreach(nodes(tree)) do n
+        set_transition_matrix!(n.data, model, branch_length(n), pos)
+    end
+    return nothing
+end
 
 
 
