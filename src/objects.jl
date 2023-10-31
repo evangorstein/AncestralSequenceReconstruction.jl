@@ -183,7 +183,7 @@ end
 - `verbosity :: Int`: verbosity level. Default 0.
 """
 @kwdef mutable struct ASRMethod
-    joint::Bool = false
+    joint::Bool = true
     ML::Bool = false
     alphabet::Symbol = :aa
     verbosity::Int = 0

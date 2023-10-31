@@ -36,6 +36,7 @@ dir = "basics/"
 using AncestralSequenceReconstruction
 using ArDCA
 using JLD2
+using StatsBase
 using Test
 using TreeTools
 
@@ -82,3 +83,23 @@ end
     @test local_p_x1[j] ≈ t["R"].data.pstates[j].weights.π[x1[j]]
 end
 
+@testset "Reconstruction at root: energy" begin
+    Seq = ArDCA.sample(arnet, 1000)
+    lk_mean = mean(s -> ArDCA.loglikelihood(s, arnet), eachcol(Seq))
+
+    root_sequences = map(1:200) do _
+       t = infer_ancestral(tree, ar_model, ASRMethod(ML=false, optimize_branch_length=false))
+       convert(Vector{Int}, t.root.data.sequence)
+   end
+   lk_root = mean(s -> ArDCA.loglikelihood(s, arnet), root_sequences)
+
+   @test isapprox(lk_root, lk_mean, rtol = 1e-2)
+
+    best_root = let
+       t = infer_ancestral(tree, ar_model, ASRMethod(ML=true, optimize_branch_length=false))
+       convert(Vector{Int}, t.root.data.sequence)
+    end
+    lk_best_root = ArDCA.loglikelihood(best_root, arnet)
+
+    @test lk_best_root < lk_mean
+end
