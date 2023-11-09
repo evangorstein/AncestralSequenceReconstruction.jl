@@ -179,8 +179,11 @@ end
     ASRMethod
 
 - `joint::Bool`: joint or marginal inference. Default `false`.
+- `ML::Bool`: maximum likelihood, or sampling. Default `false`.
 - `alphabet :: Symbol`: alphabet used to map from integers to sequences. Default `:aa`.
 - `verbosity :: Int`: verbosity level. Default 0.
+- `optimize_branch_length`: Optimize the branch lengths of the tree according to the model.
+  Default `true`.
 """
 @kwdef mutable struct ASRMethod
     joint::Bool = true
