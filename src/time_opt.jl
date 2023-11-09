@@ -1,3 +1,35 @@
+function optimize_branch_length(
+    newick_file::AbstractString, fastafile::AbstractString, model, strategy;
+    outnewick=nothing,
+)
+    # read sequences
+    seqmap = FASTAReader(open(fastafile, "r")) do reader
+        map(rec -> identifier(rec) => sequence(rec),reader)
+    end
+
+    # set parameters and read tree
+    L = length(first(seqmap)[2])
+    q = alphabet_size(strategy.alphabet)
+    if any(x -> length(x[2]) != L, seqmap)
+        error("All sequences must have the same length in $fastafile")
+    end
+    T() = AState{q}(;L)
+    tree = read_tree(newick_file; node_data_type = T)
+    sequences_to_tree!(tree, seqmap; alphabet=strategy.alphabet)
+
+    # re-infer branch lengths
+    opt_strat = @set strategy.joint=false
+    optimize_branch_length!(tree, model, opt_strat)
+
+    # write output if needed
+    if !isnothing(outnewick)
+        write(outnewick, tree; internal_labels=true)
+    end
+
+    return tree
+end
+
+
 function optimize_branch_length!(
     tree::Tree{<:AState}, model::ProfileModel, strategy = ASRMethod(; joint=false);
     rconv = 1e-3, ncycles = 10,
