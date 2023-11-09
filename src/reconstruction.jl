@@ -15,7 +15,7 @@ function infer_ancestral(
     end
     T() = AState{q}(;L)
     tree = read_tree(newick_file; node_data_type = T)
-    sequences_to_tree!(tree, seqmap)
+    sequences_to_tree!(tree, seqmap; alphabet=strategy.alphabet)
 
     # re-infer branch length
     if strategy.optimize_branch_length

@@ -4,7 +4,7 @@ const NT_ALPHABET = "ACGT"
 aa_alphabet_names = (:aa, :AA, :aminoacids, :amino_acids)
 nt_alphabet_names = (:nt, :nucleotide, :dna)
 
-function alphabet_map(alphabet)
+function alphabet_string(alphabet)
     return if alphabet in aa_alphabet_names
         AA_ALPHABET
     elseif alphabet in nt_alphabet_names
@@ -13,17 +13,17 @@ function alphabet_map(alphabet)
         unknown_alphabet_error(alphabet)
     end
 end
-alphabet_size(alphabet) = length(alphabet_map(alphabet))
+alphabet_size(alphabet) = length(alphabet_string(alphabet))
 
 """
-    compute_mapping(s::AbstractString)
+    alphabet_mapping(s::AbstractString)
 
 `Dict(i => c for (i,c) in enumerate(s))`.
 """
-compute_mapping(s::AbstractString) = Dict(c => i for (i, c) in enumerate(s))
+alphabet_mapping(s::AbstractString) = Dict(c => i for (i, c) in enumerate(s))
 
-const AA_MAPPING = compute_mapping(AA_ALPHABET)
-const NT_MAPPING = compute_mapping(NT_ALPHABET)
+const AA_MAPPING = alphabet_mapping(AA_ALPHABET)
+const NT_MAPPING = alphabet_mapping(NT_ALPHABET)
 
 function unknown_alphabet_error(a)
     throw(ArgumentError("""
@@ -44,7 +44,7 @@ end
 sequence_to_intvec(s::AbstractVector{<:Integer}; kwargs...) = s
 
 function intvec_to_sequence(X::AbstractVector; alphabet=:aa)
-    amap = alphabet_map(alphabet)
+    amap = alphabet_string(alphabet)
     return map(x -> amap[x], X) |> String
 end
 
