@@ -152,6 +152,13 @@ end
 
 reset_state!(state::AState, pos::Int) = reset_state!(state.pstates[pos])
 reset_state!(tree::Tree, pos::Int) = foreach(n -> reset_state!(n.data, pos), nodes(tree))
+function reset_state!(node::TreeNode{<:AState})
+    !isleaf(node) && data(node).sequence .= nothing
+    for pos in 1:data(node).L
+        reset_state!(data(node), pos)
+    end
+    return nothing
+end
 
 reconstructed_positions(state::AState) = findall(!isnothing, state.sequence)
 is_reconstructed(state::AState, pos::Int) = !isnothing(state.sequence[pos])
