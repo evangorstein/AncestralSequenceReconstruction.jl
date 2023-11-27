@@ -127,12 +127,37 @@ end
 ########## Other ##########
 =#
 
-function transition_probability(old::Int, new::Int, model::ProfileModel, t, pos)
+
+# function transition_probability(old::Int, new::Int, model::ProfileModel, t, pos)
+#     ν = exp(-model.μ * t)
+#     return ν * (old == new) + (1-ν)*model.P[pos][new]
+# end
+# function transition_probability(old, new, model::ProfileModel, t, pos, π)
+#     return transition_probability(old, new, model, t, pos, π)
+# end
+
+function log_transition_probability(
+    old::AbstractVector,
+    new::AbstractVector,
+    t::Number,
+    model::ProfileModel,
+)
+    model.with_code && error("For now this function cannot use genetic code")
     ν = exp(-model.μ * t)
-    return ν * (old == new) + (1-ν)*model.P[pos][new]
-end
-function transition_probability(old, new, model::ProfileModel, t, pos, π)
-    return transition_probability(old, new, model, t, pos, π)
+    return sum(enumerate(zip(old, new))) do (i, (a,b))
+        if isnothing(a) || isnothing(b)
+            error(
+                "Cannot compute transition probability for uninitialized sequence -
+                Got `nothing` at position $i"
+            )
+        end
+        log((1-ν)*model.P[i][b] + (a == b ? ν : 0.))
+    end
 end
 
+function log_probability(seq::AbstractVector, model::ProfileModel)
+    return sum(enumerate(seq)) do (i, s)
+        log(model.P[i][s])
+    end
+end
 

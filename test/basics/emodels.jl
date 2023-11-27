@@ -101,5 +101,5 @@ end
     end
     lk_best_root = ArDCA.loglikelihood(best_root, arnet)
 
-    @test lk_best_root < lk_mean
+    @test lk_best_root > lk_mean
 end

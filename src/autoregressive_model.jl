@@ -20,6 +20,8 @@ length(model::AutoRegressiveModel) = length(model.arnet.H) + 1
 
 ordering(model::AutoRegressiveModel) = model.arnet.idxperm
 
+
+
 #=
 ########## set_π ##########
 =#
@@ -53,4 +55,44 @@ function set_π!(astate::AState{q}, model::AutoRegressiveModel{q}, pos::Int) whe
     for (a, x) in enumerate(local_field)
         astate.pstates[pos].weights.π[a] = x
     end
+end
+
+
+#=
+
+=#
+
+function get_local_field(sequence::AbstractVector, model::AutoRegressiveModel{q}) where q
+    # pos is in the reference of arnet
+    pos = length(sequence) + 1
+    if pos == 1
+        return model.arnet.p0
+    end
+
+    J = model.arnet.J[pos-1]
+    H = model.arnet.H[pos-1]
+    local_field = copy(H)
+    for (i, b) in enumerate(sequence), a in 1:q
+        local_field[a] += J[a, b, i]
+    end
+    ArDCA.softmax!(local_field)
+
+    return local_field
+end
+
+function log_transition_probability(
+    old::AbstractArray,
+    new::AbstractArray,
+    t::Number,
+    model::AutoRegressiveModel,
+)
+    model.with_code && error("For now this function cannot use genetic code")
+    ν = exp(-model.μ * t)
+    return sum(enumerate(zip(old, new))) do (i,(a,b))
+        local_field = get_local_field(new[1:(i-1)], model)
+        log((1-ν)*local_field[b] + (a == b ? ν : 0.))
+    end
+end
+function log_probability(sequence::AbstractVector, model::AutoRegressiveModel)
+    return ArDCA.loglikelihood(convert(Vector{Int}, sequence), model.arnet)
 end

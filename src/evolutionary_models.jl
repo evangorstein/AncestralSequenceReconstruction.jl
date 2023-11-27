@@ -40,9 +40,11 @@ Set transition rate matrix in place, in matrix `Q`.
 function set_transition_rate_matrix! end
 
 """
-    transition_probability(old::Int, new::Int, model::EvolutionaryModel, t, pos, π)
+    log_transition_probability(old::Array{Int}, new::Array{Int}, t, model::EvolutionaryModel)
+
+Log-probability of transition from configurations `old` to `new` in time `t` for `model`.
 """
-function transition_probability end
+function log_transition_probability end
 
 """
     transition_matrix(model::EvolutionModel, t, pos[, π])
