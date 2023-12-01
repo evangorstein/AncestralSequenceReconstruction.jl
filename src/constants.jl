@@ -13,5 +13,5 @@ let v::Int = 0
 end
 
 BRANCH_LWR_BOUND(L) = 1e-3/L
-BRANCH_UPR_BOUND(L) = 2 * (1 + log(L))
+BRANCH_UPR_BOUND(L) = 2 * (1 + log(L)) # why?
 

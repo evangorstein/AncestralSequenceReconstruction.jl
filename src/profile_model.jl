@@ -60,6 +60,23 @@ Equivalent to `ProfileModel(map(_ -> [1/4, 1/4, 1/4, 1/4], 1:L); μ = 4/3)`.
 """
 JukesCantor(L::Int) = ProfileModel(map(_ -> [1/4, 1/4, 1/4, 1/4], 1:L); μ = 4/3)
 
+"""
+    ProfileModel(arnet::ArDCA.ArNet; M=1000)
+
+Convenience. Sample `arnet` to compute single site frequencies, and return corresponding
+profile model.
+Use a sample of `M` sequences.
+"""
+function ProfileModel(arnet::ArDCA.ArNet; M = 1000, pc=true)
+    q = length(arnet.p0)
+    S = ArDCA.sample(arnet, M)'
+    return map(eachcol(S)) do X
+        f = countmap(X)
+        Z = sum(values(f)) + (pc ? q : 0)
+        [(get(f, a, 0) + (pc ? 1 : 0))/Z for a in 1:q]
+    end |> ASR.ProfileModel
+end
+
 #=
 ########## ordering ##########
 =#

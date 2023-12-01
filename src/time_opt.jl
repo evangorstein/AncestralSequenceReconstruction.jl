@@ -1,5 +1,8 @@
 function optimize_branch_length(
-    newick_file::AbstractString, fastafile::AbstractString, model, strategy;
+    newick_file::AbstractString,
+    fastafile::AbstractString,
+    model::EvolutionModel,
+    strategy = ASRMethod(; joint=false);
     outnewick=nothing,
 )
     # read sequences

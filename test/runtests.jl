@@ -1,6 +1,10 @@
 using AncestralSequenceReconstruction
+using ArDCA
+using JLD2
+using StatsBase
 using Test
 using TreeTools
+
 
 @testset "AncestralSequenceReconstruction.jl" begin
     # Basic tests for evolution models

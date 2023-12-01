@@ -31,9 +31,9 @@ function infer_ancestral(
 
     # write output if asked
     if !isnothing(outfasta)
-        FASTAWriter(open(outfasta, "w")) do reader
+        FASTAWriter(open(outfasta, "w")) do writer
             for (name, seq) in internal_sequences
-                write(reader, FASTARecord(name, seq))
+                write(writer, FASTARecord(name, seq))
             end
         end
     end

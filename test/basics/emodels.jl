@@ -33,13 +33,6 @@ end
 dir = dirname(@__FILE__)
 dir = "basics/"
 
-using AncestralSequenceReconstruction
-using ArDCA
-using JLD2
-using StatsBase
-using Test
-using TreeTools
-
 
 q = 21
 L = 112
