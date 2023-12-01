@@ -34,5 +34,6 @@ export infer_ancestral
 include("time_opt.jl")
 
 include("misc.jl")
+include("simulate.jl")
 
 end
