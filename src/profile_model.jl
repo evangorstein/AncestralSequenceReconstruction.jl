@@ -144,15 +144,6 @@ end
 ########## Other ##########
 =#
 
-
-# function transition_probability(old::Int, new::Int, model::ProfileModel, t, pos)
-#     ν = exp(-model.μ * t)
-#     return ν * (old == new) + (1-ν)*model.P[pos][new]
-# end
-# function transition_probability(old, new, model::ProfileModel, t, pos, π)
-#     return transition_probability(old, new, model, t, pos, π)
-# end
-
 function log_transition_probability(
     old::AbstractVector,
     new::AbstractVector,

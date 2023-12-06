@@ -1,7 +1,26 @@
+"""
+    infer_ancestral(
+        newick_file::AbstractString, fastafile::AbstractString, model, strategy;
+        outfasta = nothing, outnewick = nothing,
+    )
+
+Writing output:
+- if `outnewick` is a `String`, write the tree to the corresponding file.
+- if `outfasta` is a `String`, write the reconstructed internal sequences to the
+  corresponding file in Fasta format.
+  If it is a `Vector` of `String`, then its length should be equal to
+  `strategy.repetitions`, and reconstruction from each repetition will be written to
+  the corresponding file in the vector.
+"""
 function infer_ancestral(
     newick_file::AbstractString, fastafile::AbstractString, model, strategy;
     outfasta = nothing, outnewick = nothing,
 )
+    # pre-emptive check of parameters
+    if strategy.repetitions>1 && strategy.ML
+        @warn "Asked for more than one repetition with ML strategy. Are you sure?"
+    end
+
     # read sequences
     seqmap = FASTAReader(open(fastafile, "r")) do reader
         map(rec -> identifier(rec) => sequence(rec),reader)
@@ -24,24 +43,50 @@ function infer_ancestral(
     end
 
     # reconstruct
-    infer_ancestral!(tree, model, strategy)
-    internal_sequences = map(internals(tree)) do node
-        label(node) => intvec_to_sequence(node.data.sequence; alphabet = strategy.alphabet)
+    internal_sequences = map(1:strategy.repetitions) do _
+        infer_ancestral!(tree, model, strategy)
+        map(internals(tree)) do node
+            label(node) => intvec_to_sequence(
+                node.data.sequence; alphabet = strategy.alphabet
+            )
+        end
     end
 
-    # write output if asked
-    if !isnothing(outfasta)
+    # write internal sequences to fasta if asked
+    if typeof(outfasta) <: AbstractString
+        # Single file provided
+        if strategy.repetitions > 1
+            @warn """Asked for $(strategy.repetitions) independent inferences \
+            but got only one output fasta file. Writing the first repetition only.
+            """
+        end
         FASTAWriter(open(outfasta, "w")) do writer
-            for (name, seq) in internal_sequences
+            for (name, seq) in internal_sequences[1]
                 write(writer, FASTARecord(name, seq))
             end
         end
+    elseif typeof(outfasta) <: AbstractVector
+        # Vector of files provided
+        if strategy.repetitions != length(outfasta)
+            error("""Asked for $(strategy.repetitions)
+                but only $(length(outfasta)) output fasta files provided.
+            """)
+        end
+        for (file, iseqs) in zip(outfasta, internal_sequences)
+            FASTAWriter(open(file, "w")) do writer
+                for (name, seq) in iseqs
+                    write(writer, FASTARecord(name, seq))
+                end
+            end
+        end
     end
+
+    # Write output tree (potentially with re-inferred branch lengths)
     if !isnothing(outnewick)
         write(outnewick, tree; internal_labels=true)
     end
 
-    return tree, internal_sequences
+    return tree, strategy.repetitions == 1 ? internal_sequences[1] : internal_sequences
 end
 """
     infer_ancestral(tree::Tree{<:AState}, model, strategy)

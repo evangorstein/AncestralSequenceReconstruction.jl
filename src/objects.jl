@@ -190,12 +190,20 @@ end
 - `alphabet :: Symbol`: alphabet used to map from integers to sequences. Default `:aa`.
 - `verbosity :: Int`: verbosity level. Default 0.
 - `optimize_branch_length`: Optimize the branch lengths of the tree according to the model.
-  Default `true`.
+  Default `false`.
+- `repetitions :: Int`: Number of repetitions for the reconstruction.
+  Should be set to 1 for the ML reconstruction.
+  For Bayesian reconstruction (*i.e.* `ML=false`), this allows for sampling of likely
+  ancestors.
+  If higher than 1, the `infer_ancestral` function will return an array of sequence
+  mappings, one for each reconstruction.
+  An array of output fasta files should also be provided.
 """
 @kwdef mutable struct ASRMethod
     joint::Bool = true
     ML::Bool = false
     alphabet::Symbol = :aa
     verbosity::Int = 0
-    optimize_branch_length = true
+    optimize_branch_length::Bool = false
+    repetitions::Int = 1
 end
