@@ -14,6 +14,15 @@ function alphabet_string(alphabet)
     end
 end
 alphabet_size(alphabet) = length(alphabet_string(alphabet))
+function default_alphabet(q::Int)
+    return if q == 21
+        :aa
+    elseif q == 4
+        :nt
+    else
+        error("Not default alphabet for q=$q")
+    end
+end
 
 """
     alphabet_mapping(s::AbstractString)

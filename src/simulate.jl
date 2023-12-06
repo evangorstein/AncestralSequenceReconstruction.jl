@@ -14,7 +14,7 @@ Write output to alignments `leaves_fasta` and `internals_fasta`.
 """
 function evolve(
     tree::Tree, model::EvolutionModel{q};
-    alphabet=:aa, leaves_fasta = "", internals_fasta = "", root=nothing,
+    alphabet=ASR.default_alphabet(q), leaves_fasta = "", internals_fasta = "", root=nothing,
 ) where q
     L = length(model)
     tc = convert(Tree{ASR.AState{q}}, tree)
