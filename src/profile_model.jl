@@ -8,6 +8,7 @@
 ```
 P :: SVector{q, Float64}
 μ :: Float64
+alphabet :: Alphabet
 ```
 An independent model without using the genetic code.
 Ordering is irrelevant in this case, defaults to `1:L`.
@@ -17,14 +18,16 @@ Ordering is irrelevant in this case, defaults to `1:L`.
     μ :: Float64 = 1.
     with_code :: Bool = false
     genetic_code :: Matrix{Float64} = zeros(Float64, q, q)
-    function ProfileModel{q}(P, μ, with_code, genetic_code) where q
+    alphabet :: Alphabet = default_alphabet(q)
+    function ProfileModel{q}(P, μ, with_code, genetic_code, alphabet) where q
         for p in P
             @assert isapprox(sum(p), 1) "Probabilities must sum to one - got $(sum(p))"
         end
         @assert all(p -> length(p) == q, P) "Expected probability vectors of length $q"
         @assert μ>0 "Mutation rate should be strictly positive"
         @assert !with_code || q == length(AA_ALPHABET) "Can only use genetic_code for amino-acids (got q=$q)"
-        return new{q}(P, μ, with_code, genetic_code)
+        @assert length(alphabet) == q "Alphabet $alphabet and model (q=$q) must have consistent sizes"
+        return new{q}(P, μ, with_code, genetic_code, alphabet)
     end
 end
 """
@@ -40,13 +43,16 @@ Return an `ProfileModel` object using probability `P`. `P` can be
 ]
 ```
 """
-function ProfileModel(P::AbstractVector{<:AbstractVector}; kwargs...)
+function ProfileModel(
+    P::AbstractVector{<:AbstractVector};
+    alphabet=first(P) |> length |> default_alphabet, kwargs...
+)
     if !allequal(Iterators.map(length, P))
         error("Incorrect dimensions for probability $P")
     end
 
     q = length(first(P))
-    return ProfileModel{q}(; P, kwargs...)
+    return ProfileModel{q}(; P, alphabet=Alphabet(alphabet), kwargs...)
 end
 ProfileModel(P::AbstractMatrix; kwargs...) = ProfileModel(eachcol(P); kwargs...)
 
@@ -75,6 +81,17 @@ function ProfileModel(arnet::ArDCA.ArNet; M = 1000, pc=true)
         Z = sum(values(f)) + (pc ? q : 0)
         [(get(f, a, 0) + (pc ? 1 : 0))/Z for a in 1:q]
     end |> ASR.ProfileModel
+end
+
+
+function change_alphabet(model::ProfileModel, alphabet::Alphabet)
+    Q = map(model.P) do p
+        q = map(collect(alphabet.string)) do a
+            j = get(model.alphabet.mapping, a, 0)
+            j == 0 ? 0. : p[j]
+        end
+    end
+    return ProfileModel(Q; alphabet)
 end
 
 #=
@@ -163,9 +180,27 @@ function log_transition_probability(
     end
 end
 
-function log_probability(seq::AbstractVector, model::ProfileModel)
+function log_probability(seq::AbstractVector{<:Integer}, model::ProfileModel)
     return sum(enumerate(seq)) do (i, s)
         log(model.P[i][s])
     end
 end
+function log_probability(seq::AbstractString, model::ProfileModel)
+    return log_probability(sequence_to_intvec(seq, model.alphabet), model)
+end
+
+
+sample(model::ProfileModel{q}) where q = map(P -> wsample(1:q, P), model.P)
+function sample(model::ProfileModel, M::Int)
+    X = zeros(Int64, length(model), M)
+    for m in 1:M
+        X[:, m] .= sample(model)
+    end
+    return X
+end
+
+ml_sequence(model::ProfileModel) = map(argmax, model.P)
+
+entropy(model::ProfileModel, i::Int) = entropy(model.P[i])
+entropy(model::ProfileModel) = sum(entropy, model.P)
 

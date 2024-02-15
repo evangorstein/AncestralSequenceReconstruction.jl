@@ -1,7 +1,10 @@
 """
     infer_ancestral(
-        newick_file::AbstractString, fastafile::AbstractString, model, strategy;
-        outfasta = nothing, outnewick = nothing,
+        tree::Tree, leaf_sequences::AbstractVector, model, strategy;
+        outfasta = nothing, outnewick = nothing, outtable = nothing,
+    )
+    infer_ancestral(
+        newick_file::AbstractString, fastafile::AbstractString, model, strategy; kwargs...
     )
 
 Writing output:
@@ -11,30 +14,43 @@ Writing output:
   If it is a `Vector` of `String`, then its length should be equal to
   `strategy.repetitions`, and reconstruction from each repetition will be written to
   the corresponding file in the vector.
+- `outtable` is for a table in the style of Iqtree's `.state` file: it contains
+  the posterior distribution of states at each internal node.
 """
 function infer_ancestral(
     newick_file::AbstractString, fastafile::AbstractString, model, strategy;
-    outfasta = nothing, outnewick = nothing,
+    kwargs...
+)
+    # read sequences
+    sequences = FASTAReader(open(fastafile, "r")) do reader
+        map(rec -> identifier(rec) => sequence(rec),reader)
+    end
+
+    tree = read_tree(newick_file)
+
+    return infer_ancestral(tree, sequences, model, strategy; kwargs...)
+end
+
+function infer_ancestral(
+    tree::Tree, leaf_sequences::Union{AbstractVector, AbstractDict}, model, strategy;
+    outfasta = nothing, outnewick = nothing, outtable = nothing,
 )
     # pre-emptive check of parameters
     if strategy.repetitions>1 && strategy.ML
         @warn "Asked for more than one repetition with ML strategy. Are you sure?"
     end
 
-    # read sequences
-    seqmap = FASTAReader(open(fastafile, "r")) do reader
-        map(rec -> identifier(rec) => sequence(rec),reader)
-    end
-
-    # set parameters and read tree
-    L = length(first(seqmap)[2])
-    q = alphabet_size(strategy.alphabet)
-    if any(x -> length(x[2]) != L, seqmap)
+    # set parameters and build tree of correct type
+    L = length(first(leaf_sequences)[2])
+    q = length(strategy.alphabet)
+    if any(x -> length(x[2]) != L, leaf_sequences)
         error("All sequences must have the same length in $fastafile")
     end
-    T() = AState{q}(;L)
-    tree = read_tree(newick_file; node_data_type = T)
-    sequences_to_tree!(tree, seqmap; alphabet=strategy.alphabet)
+
+    tree = convert(AState{q}, tree)
+    foreach(n -> n.data = AState{q}(;L), nodes(tree))
+    sequences_to_tree!(tree, leaf_sequences; alphabet=strategy.alphabet)
+    # @info first(leaves(tree)).data
 
     # re-infer branch length
     if strategy.optimize_branch_length
@@ -49,7 +65,7 @@ function infer_ancestral(
             label(node) => intvec_to_sequence(
                 node.data.sequence; alphabet = strategy.alphabet
             )
-        end
+        end |> Dict
     end
 
     # write internal sequences to fasta if asked
@@ -84,6 +100,12 @@ function infer_ancestral(
     # Write output tree (potentially with re-inferred branch lengths)
     if !isnothing(outnewick)
         write(outnewick, tree; internal_labels=true)
+    end
+
+    # Write ASR state table if asked
+    if !isnothing(outtable)
+        tab = generate_state_table(tree, strategy.alphabet)
+        writedlm(outtable, tab, '\t')
     end
 
     return tree, strategy.repetitions == 1 ? internal_sequences[1] : internal_sequences
@@ -451,14 +473,13 @@ end
 Pick marginal ML state at `p`.
 """
 function pick_ML_state!(p::PosState{q}) where q
-    P = posterior(p)
-    lk, a = findmax(P)
-    p.c = a
-    p.posterior = lk
-    return a
+    p.posterior = posterior(p)
+    p.c = argmax(p.posterior)
+    return p.c
 end
 
 function pick_ML_state_joint!(p::PosState{q}) where q
+    @warn "Not sure this function is working ... should take ancestral state into account"
     XY = [(x,y) for x in 1:q for y in 1:q]
     lk, idx = findmax(XY) do (x,y)
         p.weights.u[x] * p.weights.T[x,y] * p.weights.v[y]
@@ -477,11 +498,9 @@ end
 Marginally sample state, without taking ancestor state into account.
 """
 function sample_state!(p::PosState)
-    P = posterior(p)
-    c = StatsBase.sample(Weights(P))
-    p.c = c
-    p.posterior = P[c]
-    return c
+    p.posterior = posterior(p)
+    p.c = wsample(p.posterior)
+    return p.c
 end
 sample_state!(pstate::PosState, ::Nothing) = sample_state!(pstate)
 
@@ -491,11 +510,9 @@ sample_state!(pstate::PosState, ::Nothing) = sample_state!(pstate)
 Sample state at `pstate`, taking into account sampled ancestral state.
 """
 function sample_state!(p::PosState, anc_state::Int)
-    P = posterior(p, anc_state)
-    c = StatsBase.sample(Weights(P))
-    p.c = c
-    p.posterior = P[c]
-    return c
+    p.posterior = posterior(p, anc_state)
+    p.c = wsample(p.posterior)
+    return p.c
 end
 
 function set_state!(pstate::PosState, anc_state::Union{Nothing, Int}, strategy::ASRMethod)

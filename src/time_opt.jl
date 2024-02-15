@@ -1,10 +1,15 @@
+###########################################################################################
+####################################### BRANCH OPT ########################################
+###########################################################################################
+
+
 function optimize_branch_length(
     newick_file::AbstractString,
     fastafile::AbstractString,
-    model::EvolutionModel,
+    model::EvolutionModel{q},
     strategy = ASRMethod(; joint=false);
     outnewick=nothing,
-)
+) where q
     # read sequences
     seqmap = FASTAReader(open(fastafile, "r")) do reader
         map(rec -> identifier(rec) => sequence(rec),reader)
@@ -12,13 +17,12 @@ function optimize_branch_length(
 
     # set parameters and read tree
     L = length(first(seqmap)[2])
-    q = alphabet_size(strategy.alphabet)
     if any(x -> length(x[2]) != L, seqmap)
         error("All sequences must have the same length in $fastafile")
     end
     T() = AState{q}(;L)
     tree = read_tree(newick_file; node_data_type = T)
-    sequences_to_tree!(tree, seqmap; alphabet=strategy.alphabet)
+    sequences_to_tree!(tree, seqmap; alphabet=model.alphabet)
 
     # re-infer branch lengths
     opt_strat = @set strategy.joint=false
@@ -34,11 +38,12 @@ end
 
 
 function optimize_branch_length!(
-    tree::Tree{<:AState}, model::ProfileModel, strategy = ASRMethod(; joint=false);
-    rconv = 1e-3, ncycles = 10,
-)
+    tree::Tree{AState{q}}, model::ProfileModel{q}, strategy = ASRMethod(; joint=false);
+    rconv = 1e-3,
+) where q
     set_verbose(strategy.verbosity)
     verbose() > 0 && @info "Optimizing branch length."
+    verbose() > 2 && @info "Branch lengths" map(branch_length, tree)
 
     # initial state
     verbose() > 1 && @info "First pass of likelihood computation..."
@@ -51,15 +56,21 @@ function optimize_branch_length!(
     t = @elapsed optimize_branch_lengths_cycle!(tree, model, strategy)
     push!(lk, likelihood(tree.root, strategy))
     lk[end] < lk[end-1] && @warn "Likelihood decreased during optimization: something's wrong"
+    rel_delta_lk = (lk[end-1] - lk[end]) / lk[end-1]
     verbose() > 1 && @info "Likelihood $(lk) - $t seconds"
+    verbose() > 1 && @info "Relative lk increase: $(rel_delta_lk)"
+    verbose() > 2 && @info "Branch lengths" map(branch_length, tree)
 
     n = 0
-    while (lk[end-1] - lk[end]) / lk[end-1] > rconv && n < (ncycles - 1)
+    while rel_delta_lk > rconv && n < (strategy.optimize_branch_length_cycles - 1)
         verbose() > 1 && @info "Branch length opt $(n+2)..."
         t = @elapsed optimize_branch_lengths_cycle!(tree, model, strategy)
         push!(lk, likelihood(tree.root, strategy))
         lk[end] < lk[end-1] && @warn "Likelihood decreased during optimization: something's wrong"
+        rel_delta_lk = (lk[end-1] - lk[end]) / lk[end-1]
         verbose() > 1 && @info "Likelihood $(lk) - $t seconds"
+        verbose() > 1 && @info "Relative lk increase: $(rel_delta_lk)"
+        verbose() > 2 && @info "Branch lengths" map(branch_length, tree)
         n += 1
     end
 
@@ -68,7 +79,7 @@ end
 """
     optimize_branch_length(
         tree::Tree, model::ProfileModel[, strategy::ASRMethod];
-        rconv = 1e-2, ncycles = 10,
+        rconv = 1e-2
     )
 
 Optimize branch lengths to maximize likelihood of sequences at leaves of `tree`.

@@ -88,8 +88,6 @@ function normalize!(W::BranchWeights)
 end
 normalize_weights!(n::TreeNode, pos::Int) = normalize!(n.data.pstates[pos].weights)
 
-# sample(W::BranchWeights{q}) where q = StatsBase.sample(1:q, Weights((W.u' * W.T)' .* W.v))
-
 #######################################################################################
 #################################### Position state ###################################
 #######################################################################################
@@ -98,7 +96,7 @@ normalize_weights!(n::TreeNode, pos::Int) = normalize!(n.data.pstates[pos].weigh
     pos::Int = 0
     c :: Union{Nothing, Int} = nothing # current state at this position
     lk::Float64 = 0.
-    posterior :: Float64 = 0.
+    posterior :: Vector{Float64} = LinearAlgebra.normalize!(ones(Float64, q), 1)
     weights::BranchWeights{q} = BranchWeights{q}() # weights for the alg.
 end
 
@@ -107,15 +105,15 @@ function Base.copy(pstate::PosState{q}) where q
         pos=pstate.pos,
         c = pstate.c,
         lk = pstate.lk,
-        posterior = pstate.posterior,
+        posterior = copy(pstate.posterior),
         weights = copy(pstate.weights),
     )
 end
 
-function reset_state!(pstate::PosState)
+function reset_state!(pstate::PosState{q}) where q
     pstate.c = nothing
     pstate.lk = 0
-    pstate.posterior = 0
+    pstate.posterior = LinearAlgebra.normalize!(ones(Float64, q), 1)
     reset_weights!(pstate.weights)
     return nothing
 end
@@ -179,6 +177,100 @@ function Base.show(io::IO, state::AState)
 end
 
 #######################################################################################
+####################################### Alphabet ######################################
+#######################################################################################
+
+
+const _AA_ALPHABET = "-ACDEFGHIKLMNPQRSTVWY"
+const _NT_ALPHABET_NOGAP = "ACGT"
+const _SPIN_ALPHABET = "01"
+
+
+_alphabet_mapping(s::AbstractString) = Dict(c => i for (i, c) in enumerate(s))
+
+@kwdef struct Alphabet
+    string::String
+    mapping::Dict{Char, Int} = _alphabet_mapping(string)
+end
+Alphabet(s::AbstractString) = Alphabet(; string = s, mapping = _alphabet_mapping(s))
+Alphabet(a::Alphabet) = a
+function Alphabet(mapping::AbstractDict{Char, Int})
+    str = Vector{Char}(undef, length(mapping))
+    for (c, i) in mapping
+        str[i] = c
+    end
+    return Alphabet(;string = prod(str), mapping)
+end
+function Alphabet(rev_mapping::AbstractDict{Int, Char})
+    mapping = Dict{Char, Int}(c => i for (i,c) in rev_mapping)
+    return Alphabet(mapping)
+end
+
+const aa_alphabet = Alphabet(_AA_ALPHABET)
+const aa_alphabet_names = (:aa, :AA, :aminoacids, :amino_acids)
+
+const nt_alphabet = Alphabet(_NT_ALPHABET_NOGAP)
+const nt_alphabet_names = (:nt, :nucleotide, :dna)
+
+const spin_alphabet = Alphabet(_SPIN_ALPHABET)
+const sping_alphabet_names = (:spin,)
+
+# Default alphabet from symbol
+function Alphabet(alphabet::Symbol)
+    return if alphabet in aa_alphabet_names
+        aa_alphabet
+    elseif alphabet in nt_alphabet_names
+        nt_alphabet
+    elseif alphabet in sping_alphabet_names
+        spin_alphabet
+    else
+        unknown_alphabet_error(alphabet)
+    end
+end
+
+Base.convert(::Type{Alphabet}, x::Symbol) = Alphabet(x)
+
+Base.length(a::Alphabet) = length(a.string)
+
+# Default alphabet for given size q
+function default_alphabet(q::Int)
+    return if q == 21
+        aa_alphabet
+    elseif q == 4
+        nt_alphabet
+    elseif q == 2
+        spin_alphabet
+    else
+        error("Not default alphabet for q=$q")
+    end
+end
+
+function unknown_alphabet_error(a)
+    throw(ArgumentError("""
+        Unrecognized alphabet name `$a`.
+        Choose from `$aa_alphabet_names`, `$nt_alphabet_names`, `$sping_alphabet_names`, or provide a string, or construct with `Alphabet`.
+    """))
+end
+
+# from string to `Vector{Int}`
+function sequence_to_intvec(s::AbstractString; alphabet = :aa)
+    return sequence_to_intvec(s, Alphabet(alphabet))
+end
+function sequence_to_intvec(s::AbstractString, alphabet::Alphabet)
+    return map(c -> alphabet.mapping[Char(c)], collect(s))
+end
+sequence_to_intvec(s::AbstractVector{<:Integer}; kwargs...) = s
+
+# from `Vector{Int}` to string
+function intvec_to_sequence(X::AbstractVector; alphabet=:aa)
+    return intvec_to_sequence(X, Alphabet(alphabet))
+end
+function intvec_to_sequence(X::AbstractVector, alphabet::Alphabet)
+    return map(x -> alphabet.string[x], X) |> String
+end
+
+
+#######################################################################################
 ###################################### ASR Method #####################################
 #######################################################################################
 
@@ -187,7 +279,7 @@ end
 
 - `joint::Bool`: joint or marginal inference. Default `false`.
 - `ML::Bool`: maximum likelihood, or sampling. Default `false`.
-- `alphabet :: Symbol`: alphabet used to map from integers to sequences. Default `:aa`.
+- `alphabet :: ASR.Alphabet`: alphabet used to map from integers to sequences. Default `:aa`.
 - `verbosity :: Int`: verbosity level. Default 0.
 - `optimize_branch_length`: Optimize the branch lengths of the tree according to the model.
   Default `false`.
@@ -203,7 +295,9 @@ end
     joint::Bool = true
     ML::Bool = false
     alphabet::Symbol = :aa
+    alphabet::Alphabet = aa_alphabet
     verbosity::Int = 0
     optimize_branch_length::Bool = false
+    optimize_branch_length_cycles::Int = 3
     repetitions::Int = 1
 end

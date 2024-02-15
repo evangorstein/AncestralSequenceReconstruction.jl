@@ -3,7 +3,7 @@ module AncestralSequenceReconstruction
 const ASR = AncestralSequenceReconstruction
 export ASR
 
-import Base: copy, length
+import Base: copy, length, convert
 
 using Accessors
 using ArDCA
@@ -11,6 +11,7 @@ using DelimitedFiles
 using FASTX
 using LinearAlgebra
 using NLopt
+using Printf
 using StatsBase
 using TreeTools
 

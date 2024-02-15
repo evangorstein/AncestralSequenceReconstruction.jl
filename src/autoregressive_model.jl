@@ -3,17 +3,22 @@
     μ :: Float64 = 1.
     with_code :: Bool = false
     genetic_code :: Matrix{Float64} = zeros(Float64, q, q)
-    function AutoRegressiveModel{q}(arnet, μ, with_code, genetic_code) where q
+    alphabet :: Alphabet = default_alphabet(q)
+    function AutoRegressiveModel{q}(arnet, μ, with_code, genetic_code, alphabet) where q
         @assert length(arnet.p0) == q "Expected arnet with $q states"
         @assert μ>0 "Mutation rate should be strictly positive"
         @assert !with_code || q == length(AA_ALPHABET) "Can only use genetic_code for amino-acids (got q=$q)"
-        return new{q}(arnet, μ, with_code, genetic_code)
+        @assert length(alphabet) == q "Alphabet $alphabet and model (q=$q) must have consistent sizes"
+        return new{q}(arnet, μ, with_code, genetic_code, alphabet)
     end
 end
 
-function AutoRegressiveModel(arnet::ArDCA.ArNet; kwargs...)
+function AutoRegressiveModel(
+    arnet::ArDCA.ArNet;
+    alphabet = default_alphabet(length(arnet.p0)), kwargs...
+)
     q = length(arnet.p0)
-    return AutoRegressiveModel{q}(; arnet, kwargs...)
+    return AutoRegressiveModel{q}(; arnet, alphabet, kwargs...)
 end
 
 length(model::AutoRegressiveModel) = length(model.arnet.H) + 1

@@ -1,61 +1,6 @@
-const AA_ALPHABET = "-ACDEFGHIKLMNPQRSTVWY"
-const NT_ALPHABET = "ACGT"
-
-aa_alphabet_names = (:aa, :AA, :aminoacids, :amino_acids)
-nt_alphabet_names = (:nt, :nucleotide, :dna)
-
-function alphabet_string(alphabet)
-    return if alphabet in aa_alphabet_names
-        AA_ALPHABET
-    elseif alphabet in nt_alphabet_names
-        NT_ALPHABET
-    else
-        unknown_alphabet_error(alphabet)
-    end
-end
-alphabet_size(alphabet) = length(alphabet_string(alphabet))
-function default_alphabet(q::Int)
-    return if q == 21
-        :aa
-    elseif q == 4
-        :nt
-    else
-        error("Not default alphabet for q=$q")
-    end
-end
-
-"""
-    alphabet_mapping(s::AbstractString)
-
-`Dict(i => c for (i,c) in enumerate(s))`.
-"""
-alphabet_mapping(s::AbstractString) = Dict(c => i for (i, c) in enumerate(s))
-
-const AA_MAPPING = alphabet_mapping(AA_ALPHABET)
-const NT_MAPPING = alphabet_mapping(NT_ALPHABET)
-
-function unknown_alphabet_error(a)
-    throw(ArgumentError("""
-        Incorrect alphabet type `$a`.
-        Choose from `$aa_alphabet_names` or `$nt_alphabet_names`.
-    """))
-end
-
-function sequence_to_intvec(s::AbstractString; alphabet = :aa)
-    return if alphabet in aa_alphabet_names
-        map(c -> AA_MAPPING[Char(c)], collect(s))
-    elseif alphabet in nt_alphabet_names
-        map(c -> NT_MAPPING[Char(c)], collect(s))
-    else
-        unknown_alphabet_error(alphabet)
-    end
-end
-sequence_to_intvec(s::AbstractVector{<:Integer}; kwargs...) = s
-
-function intvec_to_sequence(X::AbstractVector; alphabet=:aa)
-    amap = alphabet_string(alphabet)
-    return map(x -> amap[x], X) |> String
-end
+#######################################################################################
+################################# Sequences and trees #################################
+#######################################################################################
 
 """
     fasta_to_tree!(tree::Tree{AState}, fastafile::AbstractString)
