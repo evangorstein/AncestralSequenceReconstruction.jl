@@ -207,8 +207,94 @@ function branch_length_loglk_and_grad(
     return loglk, grad
 end
 
+###########################################################################################
+##################################### BRANCH SCALING ######################################
+###########################################################################################
+function optimize_branch_scale(
+    newick_file::AbstractString,
+    fastafile::AbstractString,
+    model::EvolutionModel{q},
+    strategy = ASRMethod(; joint=false);
+    outnewick=nothing,
+) where q
+    # read sequences
+    seqmap = FASTAReader(open(fastafile, "r")) do reader
+        map(rec -> identifier(rec) => sequence(rec),reader)
+    end
 
+    # set parameters and read tree
+    L = length(first(seqmap)[2])
+    if any(x -> length(x[2]) != L, seqmap)
+        error("All sequences must have the same length in $fastafile")
+    end
+    T() = AState{q}(;L)
+    tree = read_tree(newick_file; node_data_type = T)
+    sequences_to_tree!(tree, seqmap; alphabet=model.alphabet)
 
+    # re-infer branch lengths
+    optimize_branch_scale!(tree, model, strategy)
+
+    # write output if needed
+    if !isnothing(outnewick)
+        write(outnewick, tree; internal_labels=true)
+    end
+
+    return tree
+end
+
+function optimize_branch_scale!(tree::Tree, model::ProfileModel, strategy)
+    set_verbose(strategy.verbosity)
+
+    # parameters
+    params = (tree = tree, model = model, strategy = strategy)
+
+    # optimizer
+    lw_bound = 1e-5
+    up_bound = 1e5
+    epsconv = 1e-5
+    maxit = 200
+
+    # opt = Opt(:LN_COBYLA, 1)
+    opt = Opt(:LN_SBPLX, 1)
+    lower_bounds!(opt, lw_bound)
+    upper_bounds!(opt, up_bound)
+    ftol_rel!(opt, epsconv)
+    maxeval!(opt, maxit)
+
+    max_objective!(opt, (μ, g) -> optim_wrapper_branch_scale!(μ, g, params))
+    μ0 = Float64[1]
+
+    verbose() > 0 && @info "Finding optimal scaling for branch length"
+    verbose() > 1 && @info "Initial tree likelihood $(tree_likelihood!(tree, model, params.strategy))"
+    result = optimize(opt, μ0)
+    if !in(result[3], [:SUCCESS, :STOPVAL_REACHED, :FTOL_REACHED, :XTOL_REACHED])
+        @warn "Branch scaling: $result"
+    end
+    verbose() > 1 && @info "Found scaling $(result[2][1])"
+    verbose() > 1 && @info "Final log likelihood $(result[1])"
+
+    scale_branches!(tree, result[2][1])
+    return result
+end
+
+function optim_wrapper_branch_scale!(μ, grad, params)
+    scale_branches!(params.tree, μ[1])
+    loglk = tree_likelihood!(params.tree, params.model, params.strategy)
+    # @info (μ=μ, loglk=loglk)
+    scale_branches!(params.tree, 1/μ[1])
+    # I think I always need this
+    if length(grad)>0
+    end
+    return loglk
+end
+
+function scale_branches!(tree::Tree, μ::Number)
+    foreach(n -> branch_length!(n, μ*branch_length(n)), nodes(tree; skiproot=true))
+end
+
+###########################################################################################
+################################# OLD CODE / FOR TESTING ##################################
+###########################################################################################
 
 """
     update_neighbours!(node::TreeNode)
