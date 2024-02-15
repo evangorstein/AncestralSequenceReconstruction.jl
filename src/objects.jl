@@ -294,7 +294,6 @@ end
 @kwdef mutable struct ASRMethod
     joint::Bool = true
     ML::Bool = false
-    alphabet::Symbol = :aa
     alphabet::Alphabet = aa_alphabet
     verbosity::Int = 0
     optimize_branch_length::Bool = false
