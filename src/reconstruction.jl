@@ -53,9 +53,17 @@ function infer_ancestral(
     # @info first(leaves(tree)).data
 
     # re-infer branch length
-    if strategy.optimize_branch_length
+    if strategy.optimize_branch_length && strategy.optimize_branch_scale
+        error(
+            """Got `optimize_branch_length` and `optimize_branch_scale`.
+            Choose one of the two. Tree left unchanged."""
+        )
+    elseif strategy.optimize_branch_length
         opt_strat = @set strategy.joint=false
         optimize_branch_length!(tree, model, opt_strat)
+    elseif strategy.optimize_branch_scale
+        opt_strat = @set strategy.joint=false
+        optimize_branch_scale!(tree, model, opt_strat)
     end
 
     # reconstruct
@@ -135,7 +143,7 @@ function infer_ancestral!(
 end
 
 function tree_likelihood!(tree::Tree, model::EvolutionModel, strategy::ASRMethod)
-    pruning_alg!(tree, model, strategy)
+    pruning_alg!(tree, model, strategy; set_state=false)
     return likelihood(tree.root, strategy)
 end
 
@@ -455,6 +463,11 @@ function set_leaf_state!(leaf::PosState, a::Int)
     leaf.c = a
 
     return nothing
+end
+function set_leaf_state!(leaf::PosState, ::Nothing)
+    error("""Tried to initialize leaf state at position $(leaf.pos), got `nothing`.
+        Are sequences attached to the leaves of the tree?"""
+    )
 end
 set_leaf_state!(leaf::AState, pos) = set_leaf_state!(leaf.pstates[pos], leaf.sequence[pos])
 
