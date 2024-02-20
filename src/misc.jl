@@ -21,11 +21,61 @@ function entropy(X::AbstractVector)
     end
 end
 
-function generate_state_table(tree::Tree{AState{q}}, alphabet) where q
+function generate_short_state_table(node::TreeNode{AState{q}}) where q
+    L = length(node.data.pstates)
+    header = vcat(
+        ["Node", "Total_LogLikelihood"],
+        map(i -> "lk_$i", 1:L)
+    )
+    # likelihood of reconstruction at position i (array)
+    site_likelihoods = map(1:L) do i
+        c = node.data.pstates[i].c
+        node.data.pstates[i].posterior[c]
+    end
+
+    if any(isapprox(0), site_likelihoods)
+        i = findfirst(isapprox(0), site_likelihoods)
+        @warn """Found reconstruction with likelihood $(site_likelihoods[i])
+        at position $i for node $(label(node))."""
+    end
+    if any(<(0), site_likelihoods)
+        i = findfirst(<(0), site_likelihoods)
+        error("""Found reconstruction with negative likelihood $(site_likelihoods[i])
+        at position $i for node $(label(node)).""")
+    end
+
+    row = vcat(
+        label(node), mapreduce(log, +, site_likelihoods), map(log, site_likelihoods)
+    )
+
+    return header, row
+end
+
+function generate_short_state_table(tree::Tree{AState{q}}; node_list = nothing) where q
+    node_list = if isnothing(node_list)
+        collect(internals(tree))
+    else
+        map(x -> tree[x], node_list)
+    end
+    isempty(node_list) && error("Cannot generate a state table for empty `node_list`")
+
+    L = first(node_list).data.pstates |> length
+    n = length(node_list)
+    header = generate_short_state_table(first(node_list))[1]
+    tab = Matrix{Any}(undef, n+1, length(header))
+    tab[1,:] .= header
+    foreach(enumerate(node_list)) do (i, node)
+        tab[i+1,:] .= generate_short_state_table(node)[2]
+    end
+
+    return tab
+end
+
+function generate_verbose_state_table(tree::Tree{AState{q}}, alphabet) where q
     alphabet = Alphabet(alphabet)
     header = vcat(
-        ["Node", "Site", "State"],
-        map(i -> "p_" * alphabet.string[i], 1:q)
+        ["Node", "Site", "State", "LogLikelihood"],
+        map(a -> "p_" * alphabet.string[a], 1:q)
     )
 
     n = length(nodes(tree)) - length(leaves(tree))
@@ -38,7 +88,8 @@ function generate_state_table(tree::Tree{AState{q}}, alphabet) where q
         tab[counter+1, 1] = label(node)
         tab[counter+1, 2] = pos
         tab[counter+1, 3] = alphabet.string[node.data.pstates[pos].c]
-        tab[counter+1, 4:end] .= map(x -> @sprintf("%1.5f", x),node.data.pstates[pos].posterior)
+        tab[counter+1, 4]
+        tab[counter+1, 5:end] .= map(x -> @sprintf("%1.5f", x),node.data.pstates[pos].posterior)
     end
     tab
 end
