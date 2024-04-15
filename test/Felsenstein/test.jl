@@ -1,5 +1,5 @@
 dir = dirname(@__FILE__)
-dir = "Felsenstein/"
+# dir = "Felsenstein/"
 
 using AncestralSequenceReconstruction
 using Test

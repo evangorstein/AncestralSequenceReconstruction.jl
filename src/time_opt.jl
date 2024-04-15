@@ -3,6 +3,15 @@
 ###########################################################################################
 
 
+"""
+    optimize_branch_length(
+        newick_file::AbstractString,
+        fastafile::AbstractString,
+        model::EvolutionModel,
+        strategy = ASRMethod(; joint=false);
+        outnewick=nothing,
+    )
+"""
 function optimize_branch_length(
     newick_file::AbstractString,
     fastafile::AbstractString,
@@ -62,7 +71,7 @@ function optimize_branch_length!(
     verbose() > 2 && @info "Branch lengths" map(branch_length, tree)
 
     n = 0
-    while rel_delta_lk > rconv && n < (strategy.optimize_branch_length_cycles - 1)
+    while abs(rel_delta_lk) > rconv && n < (strategy.optimize_branch_length_cycles - 1)
         verbose() > 1 && @info "Branch length opt $(n+2)..."
         t = @elapsed optimize_branch_lengths_cycle!(tree, model, strategy)
         push!(lk, likelihood(tree.root, strategy))
@@ -111,9 +120,9 @@ function optimize_branch_lengths_cycle!(
         qholder_2 = Vector{Float64}(undef, q),
     )
     # optimizer
-    lw_bound = BRANCH_LWR_BOUND(L)
+    lw_bound = BRANCH_LWR_BOUND(L; style=:ml)
     up_bound = BRANCH_UPR_BOUND(L)
-    epsconv = 1e-4
+    epsconv = 1e-2
     maxit = 100
 
     opt = Opt(:LD_LBFGS, 1)
@@ -129,8 +138,9 @@ function optimize_branch_lengths_cycle!(
     # cycle through nodes
     for n in Iterators.filter(!isroot, POT(tree.root))
         # set best branch length for n
-        @debug "---- Opt. branch length node $(label(n)) ----"
-        @debug "Previous lk" ASR.likelihood(n)
+        @debug "\n---- Opt. branch length node $(label(n)) ----"
+        @debug "Previous lk" ASR.likelihood(n, strategy)
+        @debug "Previous branch length $(branch_length(n))"
         optimize_branch_length!(n, opt, params)
 
         # recompute the transition matrix for the branch above n
@@ -139,10 +149,12 @@ function optimize_branch_lengths_cycle!(
                 n.data, model, branch_length(n), i; set_equilibrium_frequencies=false
             )
         end
-        @debug "New lk" ASR.likelihood(n)
+        @debug "New lk" ASR.likelihood(n, strategy)
+        @debug "New branch length $(branch_length(n))"
+        @debug "Branch length bounds $(lw_bound) < $(up_bound)"
         pruning_alg!(tree, model, strategy; set_state=false)
 
-        @debug "Ancestor $(label(ancestor(n))) lk" ASR.likelihood(ancestor(n))
+        @debug "Ancestor $(label(ancestor(n))) lk" ASR.likelihood(ancestor(n), strategy)
     end
 
     return nothing

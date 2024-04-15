@@ -202,5 +202,8 @@ end
 ml_sequence(model::ProfileModel) = map(argmax, model.P)
 
 entropy(model::ProfileModel, i::Int) = entropy(model.P[i])
-entropy(model::ProfileModel) = sum(entropy, model.P)
+function entropy(model::ProfileModel; ignore_columns = Int[])
+    idx = filter(!in(ignore_columns), 1:length(model.P))
+    sum(entropy, model.P[idx])
+end
 

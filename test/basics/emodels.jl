@@ -1,5 +1,3 @@
-
-
 ####### ProfileModel #######
 
 L, q = (3, 2)
@@ -31,8 +29,7 @@ end
 ####### AutoregressiveModel #######
 
 dir = dirname(@__FILE__)
-dir = "basics/"
-
+# dir = "basics/"
 
 q = 21
 L = 112
@@ -68,7 +65,7 @@ end
     j = perm[2]
 
     ASR.set_π!(t["R"].data, ar_model, i)
-    @test t["R"].data.pstates[i].weights.π ≈ arnet.p0
+    @test t["R"].data.pstates[i].weights.π ≈ ar_model.arnet.p0
 
     @test_throws ErrorException ASR.set_π!(t["R"].data, ar_model, j)
     t["R"].data.pstates[i].c = x1[i]
@@ -77,20 +74,23 @@ end
 end
 
 @testset "Reconstruction at root: energy" begin
+    # the tree has very long branches
+    # average energy of the root should be the same as eq.
     Seq = ArDCA.sample(arnet, 1000)
-    lk_mean = mean(s -> ArDCA.loglikelihood(s, arnet), eachcol(Seq))
+    lk_mean = mean(s -> ArDCA.loglikelihood(convert(Vector{Int}, s), arnet), eachcol(Seq))
 
     root_sequences = map(1:200) do _
        t = infer_ancestral(tree, ar_model, ASRMethod(ML=false, optimize_branch_length=false))
        convert(Vector{Int}, t.root.data.sequence)
-   end
-   lk_root = mean(s -> ArDCA.loglikelihood(s, arnet), root_sequences)
+    end
+    lk_root = mean(s -> ArDCA.loglikelihood(s, arnet), root_sequences)
 
-   @test isapprox(lk_root, lk_mean, rtol = 1e-2)
+    @test isapprox(lk_root, lk_mean, rtol = 1e-2)
 
     best_root = let
-       t = infer_ancestral(tree, ar_model, ASRMethod(ML=true, optimize_branch_length=false))
-       convert(Vector{Int}, t.root.data.sequence)
+        strat = ASRMethod(ML=true, joint=false, optimize_branch_length=false)
+        t = infer_ancestral(tree, ar_model, strat)
+        convert(Vector{Int}, t.root.data.sequence)
     end
     lk_best_root = ArDCA.loglikelihood(best_root, arnet)
 

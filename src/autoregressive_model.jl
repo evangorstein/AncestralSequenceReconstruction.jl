@@ -9,8 +9,17 @@
         @assert μ>0 "Mutation rate should be strictly positive"
         @assert !with_code || q == length(AA_ALPHABET) "Can only use genetic_code for amino-acids (got q=$q)"
         @assert length(alphabet) == q "Alphabet $alphabet and model (q=$q) must have consistent sizes"
+        arnet = deepcopy(arnet)
+        regularize_p0!(arnet)
         return new{q}(arnet, μ, with_code, genetic_code, alphabet)
     end
+end
+
+function regularize_p0!(arnet::ArDCA.ArNet)
+    q = round(Int, length(arnet.H) / length(arnet.idxperm))
+    pc = 1e-6
+    arnet.p0 .= (1-pc)*arnet.p0 .+ pc/q
+    return arnet
 end
 
 function AutoRegressiveModel(

@@ -51,6 +51,12 @@ function infer_ancestral(
         @warn "Asked for more than one repetition with ML strategy. Are you sure?"
     end
 
+    if alignment_per_node && isnothing(node_list)
+        @warn """Asked for one alignment per node, but no `node_list` kwarg provided.
+        Outputting alignment for every internal node in the tree."""
+        node_list = map(label, internals(tree))
+    end
+
     # set parameters and build tree of correct type
     L = length(first(leaf_sequences)[2])
     q = length(strategy.alphabet)
@@ -169,8 +175,8 @@ function write_sequences(
     # outfasta should be a string (if not use first element)
     # will write to `outfasta_nodename.fasta` (removing the extension first ofc)
     if alignment_per_node
+        isnothing(node_list) && error("Got empty `node_list`.")
         # Write one alignment with `strategy.repetitions` sequences for each `node_list`
-        node_list = isnothing(node_list) ? map(label, internals(tree)) : node_list
         for node in node_list
             fasta_file = alignment_per_node_name(node)
             FASTAWriter(open(fasta_file, "w")) do writer
@@ -225,9 +231,9 @@ function write_state_table(
 # each element is the state table generated for a given reconstruction
 # each element has one row per tree node
     if alignment_per_node
+        isnothing(node_list) && error("Got empty `node_list`.")
         # Write one table per node in `node_list`, with `strategy.repetitions` rows
         header = vcat(state_tables |> first |> eachrow |> first |> collect, "repetition")
-        node_list = isnothing(node_list) ? map(label, internals(tree)) : node_list
         for node in node_list
             # indices of the row containing `node` in all tables of `state_tables`
             idx = map(state_tables) do tab
@@ -241,8 +247,9 @@ function write_state_table(
             # rows of the table
             # appending the repetition number to each row
             rows = map(i -> hcat(state_tables[i][idx[i], :], i), 1:length(idx))
+            values = vcat(rows...)
             # writing output
-            table = vcat(reshape(header, 1, length(header)), rows...)
+            table = vcat(reshape(header, 1, length(header)), values)
             table_name = fasta_from_node_name(node, outtable)
             writedlm(table_name, table, '\t')
         end
@@ -277,6 +284,7 @@ end
 function fasta_from_node_name(node_name::AbstractString, base_name::AbstractString)
     bn, ext = splitext(base_name)
     # ext != ".fasta" && @warn "Got alignment file with extension $ext instead of `.fasta`."
+    isempty(ext) && (ext = ".fasta")
     return prod([bn, "_", node_name, ext])
 end
 function fasta_from_node_name(node_name::AbstractString, base_name)
@@ -630,6 +638,7 @@ end
 
 function pick_ML_state_joint!(p::PosState{q}) where q
     @warn "Not sure this function is working ... should take ancestral state into account"
+    # error("ML + joint not implemented yet (have to fix bug) -- change strategy")
     XY = [(x,y) for x in 1:q for y in 1:q]
     lk, idx = findmax(XY) do (x,y)
         p.weights.u[x] * p.weights.T[x,y] * p.weights.v[y]
@@ -637,7 +646,7 @@ function pick_ML_state_joint!(p::PosState{q}) where q
 
     p.c = XY[idx][2]
     x = XY[idx][1]
-    p.posterior = lk / sum(p.weights.u[x] * p.weights.T[x,:]' * p.weights.v)
+    p.posterior = posterior(p, x)
 
     return p.c
 end

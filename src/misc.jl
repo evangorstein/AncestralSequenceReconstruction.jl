@@ -25,7 +25,7 @@ function generate_short_state_table(node::TreeNode{AState{q}}) where q
     L = length(node.data.pstates)
     header = vcat(
         ["Node", "Total_LogLikelihood"],
-        map(i -> "lk_$i", 1:L)
+        # map(i -> "lk_$i", 1:L) # uncomment for site likelihood in file
     )
     # likelihood of reconstruction at position i (array)
     site_likelihoods = map(1:L) do i
@@ -40,12 +40,15 @@ function generate_short_state_table(node::TreeNode{AState{q}}) where q
     end
     if any(<(0), site_likelihoods)
         i = findfirst(<(0), site_likelihoods)
-        error("""Found reconstruction with negative likelihood $(site_likelihoods[i])
-        at position $i for node $(label(node)).""")
+        @error """Found reconstruction with negative likelihood $(site_likelihoods[i])
+        at position $i for node $(label(node))."""
     end
 
+    R(x) = round(x; sigdigits=3) # rounding for file size
     row = vcat(
-        label(node), mapreduce(log, +, site_likelihoods), map(log, site_likelihoods)
+        label(node),
+        mapreduce(R ∘ log, +, site_likelihoods),
+        # map(R ∘ log, site_likelihoods), # uncomment for site lk in file
     )
 
     return header, row

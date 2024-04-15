@@ -74,7 +74,8 @@ end
 """
 function initialize_tree(tree::Tree, seqmap; alphabet=:aa)
     L = first(seqmap)[2] |> length
-    q = alphabet_size(alphabet)
+    # q = alphabet_size(alphabet)
+    q = length(Alphabet(alphabet))
     tree = convert(Tree{AState{q}}, tree)
     foreach(n -> n.data = AState{q}(;L), nodes(tree))
     sequences_to_tree!(tree, seqmap; alphabet)

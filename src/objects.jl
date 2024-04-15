@@ -74,7 +74,9 @@ function normalize!(W::BranchWeights)
     Zu = sum(W.u)
     # check for issues
     if Zv == 0 || Zu == 0
-        error("Found likelihood weight equal to 0 - model may not be able to accomodate for data")
+        @error """Found likelihood weight equal to 0 -
+        model may not be able to accomodate for data"""
+        return false
     end
 
     for i in eachindex(W.v)
@@ -84,9 +86,17 @@ function normalize!(W::BranchWeights)
     W.Zu[] += log(Zu)
     W.Zv[] += log(Zv)
 
+    return true
+end
+function normalize_weights!(n::TreeNode, pos::Int)
+    out = normalize!(n.data.pstates[pos].weights)
+    if !out
+        error("""Error when normalizing weights for node $(n.label) at position $(pos).
+        Got down-weights $(n.data.pstates[pos].weights.u)
+        and up weights $(n.data.pstates[pos].weights.v)""")
+    end
     return nothing
 end
-normalize_weights!(n::TreeNode, pos::Int) = normalize!(n.data.pstates[pos].weights)
 
 #######################################################################################
 #################################### Position state ###################################
@@ -206,6 +216,13 @@ function Alphabet(rev_mapping::AbstractDict{Int, Char})
     return Alphabet(mapping)
 end
 
+"""
+    reverse_mapping(A::Alphabet)
+
+Return a `Dict{Int, Char}`.
+"""
+reverse_mapping(A::Alphabet) = Dict(i => c for (c,i) in A.mapping)
+
 const aa_alphabet = Alphabet(_AA_ALPHABET)
 const aa_alphabet_names = (:aa, :AA, :aminoacids, :amino_acids)
 
@@ -292,7 +309,7 @@ end
   An array of output fasta files should also be provided.
 """
 @kwdef mutable struct ASRMethod
-    joint::Bool = true
+    joint::Bool = false
     ML::Bool = false
     alphabet::Alphabet = aa_alphabet
     verbosity::Int = 0
