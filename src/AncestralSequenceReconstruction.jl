@@ -16,7 +16,6 @@ using StatsBase
 using TreeTools
 
 include("constants.jl")
-
 include("objects.jl")
 export ASRMethod
 
@@ -28,12 +27,11 @@ include("autoregressive_model.jl")
 export AutoRegressiveModel
 
 include("sequences.jl")
-
+include("felsenstein.jl") # core algorithm
 include("reconstruction.jl")
 export infer_ancestral
 
 include("time_opt.jl")
-
 include("misc.jl")
 include("simulate.jl")
 
