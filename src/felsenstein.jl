@@ -66,65 +66,61 @@ function pull_weights_up!(
     end
 
     # Pulling weights from all children
+    H = zeros(Float64, q) # will contain the sum of log messages
     for c in children(parent)
         pull_weights_up!(c, strategy; holder) # pull weights for child
         verbose() > 2 && @info "Pulling weights up: from $(label(c)) to $(label(parent)) - pos $(current_pos())"
-        pull_weights_from_child!(
+        H .+= log_message_from_child!(
             parent.data.pstates[current_pos()],
             c.data.pstates[current_pos()],
             strategy,
             holder,
         )
     end
-    normalize_weights!(parent, current_pos())
+    # Using log messages to compute v and F at the current node
+    Hmax = maximum(H)
+    G = sum(h -> exp(h - Hmax), H) # the max term in this sum is 1, so it's in [1,q]
+    foreach(x -> parent.data.pstates[current_pos()].weights.v[x] = exp(H[x] - Hmax) / G, 1:q)
+    parent.data.pstates[current_pos()].weights.Fv[] = log(G) + Hmax
 
     return nothing
 end
 
 """
-    pull_weights_from_child!(parent::PosState, child::PosState, t, model, strategy)
+    log_message_from_child(parent::PosState, child::PosState, t, model, strategy)
 
-Multiply weights at `parent` by the factor coming from `child`, in Felsenstein's pruning alg
+Get the log of the exact messages `child --> parent`: log(Q*v_c) + log(F_c)
 """
-function pull_weights_from_child!(
+function log_message_from_child!(
     parent::PosState{q},
     child::PosState{q},
     strategy::ASRMethod,
     holder::Vector{Float64} = Vector{Float64}(undef, q),
 ) where q
     return if strategy.joint && strategy.ML
-        pull_weights_from_child_max!(parent, child)
+        log_message_from_child_max!(parent, child, holder)
     else
-        pull_weights_from_child_sum!(parent, child, holder)
+        log_message_from_child_sum(parent, child, holder)
     end
 end
 
-function pull_weights_from_child_sum!(
+function log_message_from_child_sum(
     parent::PosState{q}, child::PosState{q}, lk_factor,
 ) where q
-    # lk_factor = child.weights.T * child.weights.v
     mul!(lk_factor, child.weights.T, child.weights.v)
-    parent.weights.v .*= lk_factor
-    parent.weights.Zv[] += child.weights.Zv[]
-    return lk_factor
+    return log.(lk_factor) .+ child.weights.Fv[]
 end
-function pull_weights_from_child_max!(
-    parent::PosState{q}, child::PosState{q},
+function log_message_from_child_max!(
+    parent::PosState{q}, child::PosState{q}, lk_factor,
 ) where q
     for r in 1:q # loop over parent state
-        lk_factor, child_state = findmax(1:q) do c
+        lk_factor[r], child_state = findmax(1:q) do c
             child.weights.T[r,c] * child.weights.v[c]
         end
-        parent.weights.v[r] *= lk_factor
         child.weights.c[r] = child_state
     end
-    parent.weights.Zv[] += child.weights.Zv[]
-
-    return nothing
+    return log.(lk_factor) .+ child.weights.Fv[]
 end
-
-
-
 
 #=
 ## UP LIKELIHOOD
@@ -157,12 +153,12 @@ function fetch_up_lk_root!(root::PosState, strategy::ASRMethod)
 end
 function fetch_up_lk_root_max!(root::PosState)
     root.weights.u .= 1.
-    root.weights.Zu[] = 0.
+    root.weights.Fu[] = 0.
     return nothing
 end
 function fetch_up_lk_root_sum!(root::PosState)
     root.weights.u = root.weights.π
-    root.weights.Zu[] = 0.
+    root.weights.Fu[] = 0.
     return nothing
 end
 
@@ -198,45 +194,40 @@ end
 
 
 
-function fetch_up_lk_from_ancestor!(
-    child::PosState, parent::PosState, lk_factor::Vector{Float64}, strategy::ASRMethod
+function log_message_from_ancestor(
+    child::PosState, parent::PosState, lk_factor::Vector{Float64}, strategy::ASRMethod,
 )
     return if strategy.joint && strategy.ML
-        fetch_up_lk_from_ancestor_max!(child, parent, lk_factor)
+        log_message_from_ancestor_max(child, parent, lk_factor)
     else
-        fetch_up_lk_from_ancestor_sum!(child, parent, lk_factor)
+        log_message_from_ancestor_sum(child, parent, lk_factor)
     end
 end
 
-function fetch_up_lk_from_ancestor_max!(
-    child::PosState{q}, parent::PosState{q}, lk_factor::Vector{Float64}
+function log_message_from_ancestor_max(
+    child::PosState{q}, parent::PosState{q}, lk_factor::Vector{Float64},
 ) where q
     # loop over child state and find best ancestral state
     for c in 1:q
-        lk_factor, a_state = findmax(1:q) do r
+        lk_factor[r], a_state = findmax(1:q) do r
             parent.weights.T[r,c] * parent.weights.u[r]
         end
-        child.weights.u[c] *= lk_factor
-        # parent.weights.cu[c] = a_state # best state at branch above parent given c at child
     end
-    child.weights.Zu[] += parent.weights.Zu[]
-    return nothing
+    return log.(lk_factor) .+ parent.weights.Fu[]
 end
 
-function fetch_up_lk_from_ancestor_sum!(
-    child::PosState{q}, parent::PosState{q}, lk_factor::Vector{Float64}
+function log_message_from_ancestor_sum(
+    child::PosState{q}, parent::PosState{q}, lk_factor::Vector{Float64},
 ) where q
     mul!(lk_factor, parent.weights.T', parent.weights.u)
-    foreach(x -> child.weights.u[x] *= lk_factor[x], 1:q)
-    child.weights.Zu[] += parent.weights.Zu[]
-    return nothing
+    return log.(lk_factor) .+ parent.weights.Fu[]
 end
 
 #=
 in reality, parent and child are brother nodes --
 I call it child because it is a child of the upper node of the branch represented by parent
 ie newick `(parent,child)A`, the focus is the branch A --> parent,
-and we look at contribution A --> child
+and we look at contribution child --> A
 =#
 function fetch_up_lk_from_child!(
     parent::PosState, child::PosState, lk_factor, strategy::ASRMethod
@@ -260,17 +251,16 @@ function fetch_up_lk_from_child_max!(
         parent.weights.u[a] *= lk_factor
         # no need to set child.weights.c : already done in the down_lk pass
     end
-    parent.weights.Zu[] += child.weights.Zv[]
+    parent.weights.Fu[] += child.weights.Fv[]
     return nothing
 end
 
 function fetch_up_lk_from_child_sum!(
-    parent::PosState, child::PosState, lk_factor::Vector{Float64}
+    parent::PosState, child::PosState, lk_factor::Vector{Float64},
 )
-    # lk_factor = child.weights.T * child.weights.v
     mul!(lk_factor, child.weights.T, child.weights.v)
     parent.weights.u .*= lk_factor
-    parent.weights.Zu[] += child.weights.Zv[]
+    parent.weights.Fu[] += child.weights.Fv[]
     return nothing
 end
 
@@ -291,7 +281,7 @@ function likelihood(node::TreeNode, strategy::ASRMethod)
 end
 function likelihood(node::TreeNode, Ts::AbstractVector{<:AbstractMatrix{Float64}})
     return sum(zip(node.data.pstates, Ts)) do (s, T)
-        log(s.weights.u' * T * s.weights.v) + s.weights.Zv[] + s.weights.Zu[]
+        log(s.weights.u' * T * s.weights.v) + s.weights.Fv[] + s.weights.Fu[]
     end
 end
 function likelihood_max(node::TreeNode, Ts::AbstractVector{<:AbstractMatrix{Float64}})
@@ -301,7 +291,7 @@ function likelihood_max(node::TreeNode, Ts::AbstractVector{<:AbstractMatrix{Floa
         lk = maximum(XY) do (x,y)
             s.weights.u[x] * s.weights.T[x,y] * s.weights.v[y]
         end
-        log(lk) + s.weights.Zv[] + s.weights.Zu[]
+        log(lk) + s.weights.Fv[] + s.weights.Fu[]
     end
 end
 
