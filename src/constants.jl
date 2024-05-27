@@ -5,6 +5,12 @@ let pos::Int = 1
     global reset_pos() = set_pos(0)
 end
 
+let n::Int = 1
+    global get_count() = n
+    global inc_count() = (n += 1)
+    global reset_count() = (n = 1)
+end
+
 let v::Int = 0
     global set_verbose(val) = (v=val)
     global verbose() = v

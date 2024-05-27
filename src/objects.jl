@@ -8,17 +8,19 @@ mutable struct BranchWeights{q}
     v :: Vector{Float64} # down-likelihood: probability of data below the subtree
     Fu :: Array{Float64, 0} # log-normalization for u --> u*exp(Fu) are the actual likelihoods
     Fv :: Array{Float64, 0} # log-normalization for v // dim 0 array is a trick for mutability
+    lm_up :: Vector{Float64} # log of the up message
     T :: Matrix{Float64} # propagator matrix to this state, given branch length to ancestor : T[a,b] = T[a-->b] = T[b|a,t]
     c :: Vector{Int} # character state
-    function BranchWeights{q}(π, u, v, Fu, Fv, T, c) where q
+    function BranchWeights{q}(π, u, v, Fu, Fv, lm_up, T, c) where q
         @assert isapprox(sum(π), 1) "Probabilities must sum to one - got $(sum(π))"
         @assert all(r -> sum(r)≈1, eachrow(T)) "Rows of transition matrix should sum to 1"
         @assert length(π) == q "Expected frequency vector of dimension $q, got $π"
         @assert length(u) == q "Expected weights vector of dimension $q, got $u"
         @assert length(v) == q "Expected weights vector of dimension $q, got $v"
+        @assert length(lm_up) == q "Expected log message of dimension $q, got $lm_up"
         @assert length(c) == q "Expected character state vector of dimension $q, got $c"
         @assert size(T,1) == size(T,2) == q "Expected transition matrix of dimension $q, got $T"
-        return new{q}(π, u, v, Fu, Fv, T, c)
+        return new{q}(π, u, v, Fu, Fv, lm_up, T, c)
     end
 end
 function BranchWeights{q}(π) where q
@@ -28,6 +30,7 @@ function BranchWeights{q}(π) where q
         ones(Float64, q),
         fill(0.),
         fill(0.),
+        zeros(Float64, q),
         diagm(ones(Float64, q)),
         zeros(Int, q),
     )
@@ -44,6 +47,7 @@ function reset_weights!(W::BranchWeights{q}) where q
         W.u[a] = 1
         W.v[a] = 1
         W.c[a] = 0
+        W.lm_up[a] = 0
         # foreach(b -> W.T[a,b] = 0, 1:q)
         # W.T[a,a] = 1
     end
@@ -61,7 +65,10 @@ end
 reset_up_likelihood!(n::TreeNode, pos) = reset_up_likelihood!(n.data.pstates[pos].weights)
 
 function reset_down_likelihood!(W::BranchWeights{q}) where q
-    foreach(a -> W.v[a] = 1, 1:q)
+    for a in 1:q
+        W.v[a] = 1
+        W.lm_up[a] = 0
+    end
     W.Fv[] = 0.
     return nothing
 end
@@ -113,7 +120,7 @@ end
 
 function Base.copy(pstate::PosState{q}) where q
     return PosState{q}(;
-        pos=pstate.pos,
+        pos = pstate.pos,
         c = pstate.c,
         lk = pstate.lk,
         posterior = copy(pstate.posterior),

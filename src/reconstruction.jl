@@ -179,6 +179,7 @@ function write_sequences(
         # Write one alignment with `strategy.repetitions` sequences for each `node_list`
         for node in node_list
             fasta_file = alignment_per_node_name(node)
+            mkpath(dirname(fasta_file))
             FASTAWriter(open(fasta_file, "w")) do writer
                 for rep in 1:strategy.repetitions
                     seq = internal_sequences[rep][node]
@@ -197,6 +198,7 @@ function write_sequences(
             but got only one output fasta file $outfasta. Writing the first repetition only.
             """
         end
+        mkpath(dirname(outfasta))
         FASTAWriter(open(outfasta, "w")) do writer
             for (name, seq) in internal_sequences[1]
                 write(writer, FASTARecord(name, seq))
@@ -210,6 +212,7 @@ function write_sequences(
             """)
         end
         for (file, iseqs) in zip(outfasta, internal_sequences)
+            mkpath(dirname(file))
             FASTAWriter(open(file, "w")) do writer
                 for (name, seq) in iseqs
                     write(writer, FASTARecord(name, seq))

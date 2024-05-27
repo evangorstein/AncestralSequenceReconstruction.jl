@@ -48,9 +48,96 @@ function pruning_alg(tree, model, strategy)
     return tc
 end
 
-#=
+
+
+#######################################################################################
+####################################### Messages ######################################
+#######################################################################################
+
+## Message up
+
+"""
+    log_message_up!(node::PosState, t, model, strategy)
+
+Get the log of the exact messages `node --> ancestor(node)`: `log(Q*v) + log(F)`.
+This uses only information from *below* `node`.
+"""
+function log_message_up!(
+    node::PosState{q},
+    strategy::ASRMethod,
+    holder::Vector{Float64} = Vector{Float64}(undef, q);
+    set_opt_state = true,
+) where q
+    log_message = if strategy.joint && strategy.ML
+        log_message_up_max!(node, holder; set_opt_state)
+    else
+        log_message_up_sum(node, holder)
+    end
+    node.weights.lm_up .= log_message
+    return log_message
+end
+
+function log_message_up_max!(
+    node::PosState{q}, lk_factor; set_opt_state = true,
+) where q
+    for r in 1:q # loop over parent state r and find best node state c
+        lk_factor[r], node_state = findmax(1:q) do c
+            node.weights.T[r,c] * node.weights.v[c]
+        end
+        if set_opt_state
+            node.weights.c[r] = node_state
+        end
+    end
+    return log.(lk_factor) .+ node.weights.Fv[]
+end
+function log_message_up_sum(
+    node::PosState{q}, lk_factor,
+) where q
+    mul!(lk_factor, node.weights.T, node.weights.v)
+    return log.(lk_factor) .+ node.weights.Fv[]
+end
+
+"""
+    log_message_down(node, ...)
+
+Return the log of the message that `node` sends to the branch `node --> c` where `c` is any child.
+This uses only information from *above* `node`: `node.T` and `node.u`.
+Information sent on branch `node --> c1` and coming from `c2 --> node` is taken care of by `log_message_up`.
+"""
+function log_message_down(
+    node::PosState, lk_factor::Vector{Float64}, strategy::ASRMethod,
+)
+    return if strategy.joint && strategy.ML
+        log_message_down_max(node, lk_factor)
+    else
+        log_message_down_sum(node, lk_factor)
+    end
+end
+
+function log_message_down_max(
+    node::PosState{q}, lk_factor::Vector{Float64},
+) where q
+    # loop over node state c and find best ancestral state r
+    for c in 1:q
+        lk_factor[c], a_state = findmax(1:q) do r
+            node.weights.T[r,c] * node.weights.u[r]
+        end
+    end
+    return log.(lk_factor) .+ node.weights.Fu[]
+end
+
+function log_message_down_sum(
+    node::PosState{q}, lk_factor::Vector{Float64},
+) where q
+    mul!(lk_factor, node.weights.T', node.weights.u)
+    return log.(lk_factor) .+ node.weights.Fu[]
+end
+
+#######################################################################################
+###################################### Likelihood #####################################
+#######################################################################################
+
 ## DOWN LIKELIHOOD
-=#
 
 function down_likelihood!(tree, strategy; kwargs...)
     return pull_weights_up!(tree.root, strategy; kwargs...)
@@ -70,64 +157,22 @@ function pull_weights_up!(
     for c in children(parent)
         pull_weights_up!(c, strategy; holder) # pull weights for child
         verbose() > 2 && @info "Pulling weights up: from $(label(c)) to $(label(parent)) - pos $(current_pos())"
-        H .+= log_message_from_child!(
-            parent.data.pstates[current_pos()],
-            c.data.pstates[current_pos()],
-            strategy,
-            holder,
+        H .+= log_message_up!(
+            c.data.pstates[current_pos()], strategy, holder,
         )
     end
     # Using log messages to compute v and F at the current node
     Hmax = maximum(H)
-    G = sum(h -> exp(h - Hmax), H) # the max term in this sum is 1, so it's in [1,q]
-    foreach(x -> parent.data.pstates[current_pos()].weights.v[x] = exp(H[x] - Hmax) / G, 1:q)
-    parent.data.pstates[current_pos()].weights.Fv[] = log(G) + Hmax
+    Z = sum(h -> exp(h - Hmax), H) # the max term in this sum is 1, so it's in [1,q]
+    foreach(x -> parent.data.pstates[current_pos()].weights.v[x] = exp(H[x] - Hmax) / Z, 1:q)
+    parent.data.pstates[current_pos()].weights.Fv[] = log(Z) + Hmax
 
     return nothing
 end
 
-"""
-    log_message_from_child(parent::PosState, child::PosState, t, model, strategy)
-
-Get the log of the exact messages `child --> parent`: log(Q*v_c) + log(F_c)
-"""
-function log_message_from_child!(
-    parent::PosState{q},
-    child::PosState{q},
-    strategy::ASRMethod,
-    holder::Vector{Float64} = Vector{Float64}(undef, q),
-) where q
-    return if strategy.joint && strategy.ML
-        log_message_from_child_max!(parent, child, holder)
-    else
-        log_message_from_child_sum(parent, child, holder)
-    end
-end
-
-function log_message_from_child_sum(
-    parent::PosState{q}, child::PosState{q}, lk_factor,
-) where q
-    mul!(lk_factor, child.weights.T, child.weights.v)
-    return log.(lk_factor) .+ child.weights.Fv[]
-end
-function log_message_from_child_max!(
-    parent::PosState{q}, child::PosState{q}, lk_factor,
-) where q
-    for r in 1:q # loop over parent state
-        lk_factor[r], child_state = findmax(1:q) do c
-            child.weights.T[r,c] * child.weights.v[c]
-        end
-        child.weights.c[r] = child_state
-    end
-    return log.(lk_factor) .+ child.weights.Fv[]
-end
-
-#=
 ## UP LIKELIHOOD
-=#
 
-
-up_likelihood!(tree, strategy; kwargs...)  = up_likelihood!(tree.root, strategy; kwargs...)
+up_likelihood!(tree, strategy; kwargs...) = up_likelihood!(tree.root, strategy; kwargs...)
 function up_likelihood!(
     node::TreeNode{AState{q}}, strategy; holder = Vector{Float64}(undef, q)
 ) where q
@@ -174,98 +219,34 @@ This computes the up-likelihood for the branch `A --> node`, by
 If those quantities were initialized correctly, then the up likelihood at `node` is
 fully computed here, but not normalized.
 """
-function fetch_up_lk!(node::TreeNode, pos::Int, holder::Vector{Float64}, strategy)
+function fetch_up_lk!(
+    node::TreeNode{AState{q}}, pos::Int, holder::Vector{Float64}, strategy
+) where q
     A = ancestor(node)
-    fetch_up_lk_from_ancestor!(
-        node.data.pstates[pos],
-        A.data.pstates[pos],
-        holder,
-        strategy,
+
+    G = zeros(Float64, q) # to contain log(message)
+    # Message from the part above ancestor
+    G += log_message_down(
+        A.data.pstates[pos], holder, strategy,
     )
+    # Message from sister branches
+    # for each c, get the message from c to A, and use it to set node.weights.u
     for c in Iterators.filter(!=(node), children(A))
-        fetch_up_lk_from_child!(
-            node.data.pstates[pos],
-            c.data.pstates[pos],
-            holder,
-            strategy,
-        )
+        # G += log_message_up!(
+        #     c.data.pstates[pos], strategy, holder;
+        #     set_opt_state = false,
+        # )
+        G += c.data.pstates[pos].weights.lm_up # already calculated!
     end
-end
 
+    # Updating node.weights.u
+    Gmax = maximum(G)
+    Z = sum(g -> exp(g - Gmax), G)
+    foreach(i -> node.data.pstates[pos].weights.u[i] = exp(G[i] - Gmax)/Z, 1:q)
+    node.data.pstates[pos].weights.Fu[] = log(Z) + Gmax
 
-
-function log_message_from_ancestor(
-    child::PosState, parent::PosState, lk_factor::Vector{Float64}, strategy::ASRMethod,
-)
-    return if strategy.joint && strategy.ML
-        log_message_from_ancestor_max(child, parent, lk_factor)
-    else
-        log_message_from_ancestor_sum(child, parent, lk_factor)
-    end
-end
-
-function log_message_from_ancestor_max(
-    child::PosState{q}, parent::PosState{q}, lk_factor::Vector{Float64},
-) where q
-    # loop over child state and find best ancestral state
-    for c in 1:q
-        lk_factor[r], a_state = findmax(1:q) do r
-            parent.weights.T[r,c] * parent.weights.u[r]
-        end
-    end
-    return log.(lk_factor) .+ parent.weights.Fu[]
-end
-
-function log_message_from_ancestor_sum(
-    child::PosState{q}, parent::PosState{q}, lk_factor::Vector{Float64},
-) where q
-    mul!(lk_factor, parent.weights.T', parent.weights.u)
-    return log.(lk_factor) .+ parent.weights.Fu[]
-end
-
-#=
-in reality, parent and child are brother nodes --
-I call it child because it is a child of the upper node of the branch represented by parent
-ie newick `(parent,child)A`, the focus is the branch A --> parent,
-and we look at contribution child --> A
-=#
-function fetch_up_lk_from_child!(
-    parent::PosState, child::PosState, lk_factor, strategy::ASRMethod
-)
-    return if strategy.joint && strategy.ML
-        fetch_up_lk_from_child_max!(parent, child, lk_factor)
-    else
-        fetch_up_lk_from_child_sum!(parent, child, lk_factor)
-    end
-end
-
-function fetch_up_lk_from_child_max!(
-    parent::PosState{q}, child::PosState{q}, lk_factor::Vector{Float64}
-) where q
-    # loop over states at parent
-    for a in 1:q
-        # best child state `c` given anc(parent) state `a`
-        lk_factor, child_state = findmax(1:q) do c
-            child.weights.T[a,c] * child.weights.v[c]
-        end
-        parent.weights.u[a] *= lk_factor
-        # no need to set child.weights.c : already done in the down_lk pass
-    end
-    parent.weights.Fu[] += child.weights.Fv[]
     return nothing
 end
-
-function fetch_up_lk_from_child_sum!(
-    parent::PosState, child::PosState, lk_factor::Vector{Float64},
-)
-    mul!(lk_factor, child.weights.T, child.weights.v)
-    parent.weights.u .*= lk_factor
-    parent.weights.Fu[] += child.weights.Fv[]
-    return nothing
-end
-
-
-
 
 #######################################################################################
 ######################################## Utils ########################################
