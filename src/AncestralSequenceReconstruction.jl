@@ -15,9 +15,10 @@ using Printf
 using StatsBase
 using TreeTools
 
-include("constants.jl")
 include("objects.jl")
 export ASRMethod
+
+include("constants.jl")
 
 include("evolutionary_models.jl")
 export EvolutionModel

@@ -84,6 +84,18 @@ function set_π!(tree::Tree, model::EvolutionModel, pos::Int)
     return nothing
 end
 
+function set_transition_rate_matrix_gencode!(Q, π)
+    q = 21
+    @assert q == length(π)
+    for a in 1:q, b in 1:q
+        Q[a,b] = gencode_as_mat[a,b]*π[b]
+    end
+    for a in 1:q
+        Q[a,a] = -sum(Q[a,:])
+    end
+    return Q
+end
+
 """
     set_transition_matrix!(T::Matrix, t, π; with_code, gen_code)
 
@@ -95,8 +107,8 @@ function set_transition_matrix!(
     with_code=false, gen_code = nothing,
 )
     return if with_code
-        isnothing(gen_code) && error("Must provide genetic code! (`; gen_code = Matrix...)")
-        set_transition_matrix_gencode!(T, t, π, gen_code)
+        # isnothing(gen_code) && error("Must provide genetic code! (`; gen_code = Matrix...)")
+        set_transition_matrix_gencode!(T, t, π)
     else
         set_transition_matrix_simple!(T, t, π)
     end
@@ -105,8 +117,9 @@ function set_transition_matrix!(T::Matrix, t::Missing, π::AbstractVector; kwarg
     return set_transition_matrix!(T, Inf, π; kwargs...)
 end
 
-function set_transition_matrix_gencode!(T, t, π, gen_code)
-    error("Not yet implemented!")
+function set_transition_matrix_gencode!(T, t, π)
+    set_transition_rate_matrix_gencode!(T, π)
+    T .= exp(T*t)
     return T
 end
 
