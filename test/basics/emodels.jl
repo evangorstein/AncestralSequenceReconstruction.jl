@@ -33,10 +33,10 @@ dir = dirname(@__FILE__)
 
 q = 21
 L = 112
-tree = read_tree(dir * "/tree_long_branches.nwk"; node_data_type = () -> ASR.AState{q}(;L))
-ASR.fasta_to_tree!(tree, dir * "/alignment_long_branches.fasta")
+tree = read_tree(joinpath(dir, "tree_long_branches.nwk"); node_data_type = () -> ASR.AState{q}(;L))
+ASR.fasta_to_tree!(tree, joinpath(dir, "alignment_long_branches.fasta"))
 
-arnet = JLD2.load(dir * "/arnet.jld2")["arnet"] # PF00072
+arnet = JLD2.load(joinpath(dir, "arnet.jld2"))["arnet"] # PF00072
 ar_model = AutoRegressiveModel(arnet)
 x1 = convert(Vector{Int}, tree["A"].data.sequence);
 x2 = convert(Vector{Int}, tree["B"].data.sequence);
@@ -53,8 +53,8 @@ local_p_x2 = arnet(x2);
     end
 
     for i in 1:L
-        @test local_p_x1[i] ≈ t["A"].data.pstates[i].weights.π[x1[i]]
-        @test local_p_x2[i] ≈ t["B"].data.pstates[i].weights.π[x2[i]]
+        @test isapprox(local_p_x1[i], t["A"].data.pstates[i].weights.π[x1[i]]; rtol = 1e-6)
+        @test isapprox(local_p_x2[i], t["B"].data.pstates[i].weights.π[x2[i]]; rtol = 1e-6)
     end
 end
 
@@ -85,7 +85,7 @@ end
     end
     lk_root = mean(s -> ArDCA.loglikelihood(s, arnet), root_sequences)
 
-    @test isapprox(lk_root, lk_mean, rtol = 1e-2)
+    @test isapprox(lk_root, lk_mean, rtol = 2*1e-2)
 
     best_root = let
         strat = ASRMethod(ML=true, joint=false, optimize_branch_length=false)

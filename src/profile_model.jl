@@ -129,28 +129,12 @@ end
 ########## set_transition_rate_matrix ##########
 =#
 
-function set_transition_rate_matrix_simple!(Q, model::ProfileModel{q}, pos) where q
-    π = model.P[pos]
-    for a in 1:q
-        Q[a, :] = π
-        Q[a, a] -= 1
-    end
-    return Q
-end
-function set_transition_rate_matrix_gencode!(Q, model::ProfileModel{q}, pos) where q
-    return Q
-end
-
 function set_transition_rate_matrix!(
     Q::Matrix{Float64},
     model::ProfileModel{q},
     pos::Int
 ) where q
-    return if model.with_code
-        set_transition_rate_matrix_gencode!(Q, model, pos)
-    else
-        set_transition_rate_matrix_simple!(Q, model, pos)
-    end
+    return set_transition_rate_matrix!(Q, model.P[pos])
 end
 # π useless for this model
 function set_transition_rate_matrix!(Q::Matrix, model::ProfileModel, pos::Int, π)

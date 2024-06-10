@@ -84,6 +84,24 @@ function set_π!(tree::Tree, model::EvolutionModel, pos::Int)
     return nothing
 end
 
+"""
+    set_transition_rate_matrix!(Q, π; with_code=false)
+"""
+function set_transition_rate_matrix!(Q, π; with_code=false)
+    return if with_code
+        set_transition_rate_matrix_gencode!(Q, π)
+    else
+        set_transition_rate_matrix_simple!(Q, π)
+    end
+end
+function set_transition_rate_matrix_simple!(Q, π)
+    q = size(Q, 1)
+    for a in 1:q
+        Q[a, :] = π
+        Q[a, a] -= 1
+    end
+    return Q
+end
 function set_transition_rate_matrix_gencode!(Q, π)
     q = 21
     @assert q == length(π)
