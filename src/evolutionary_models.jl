@@ -109,8 +109,10 @@ function set_transition_rate_matrix_gencode!(Q, π)
         Q[a,b] = gencode_as_mat[a,b]*π[b]
     end
     for a in 1:q
-        Q[a,a] = -sum(Q[a,:])
+        Q[a,a] -= sum(Q[a,:])
     end
+    # normalizing rates
+    # have to do something - but my simple matrix isn't normalized either
     return Q
 end
 
@@ -137,7 +139,23 @@ end
 
 function set_transition_matrix_gencode!(T, t, π)
     set_transition_rate_matrix_gencode!(T, π)
-    T .= exp(T*t)
+    if t < Inf
+        T .= exp(T*t)
+    else
+        q = size(T, 1)
+        # 1 is gap, on its own for gen code
+        T[1,:] .= 0.
+        T[:, 1] .= 0.
+        T[1,1] = 1.0
+
+        for a in 2:q
+            T[2:end, a] .= π[a]
+        end
+        # normalization not guaranteed with gaps...
+        for a in 1:q
+            T[a, :] ./= sum(T[a,:])
+        end
+    end
     return T
 end
 

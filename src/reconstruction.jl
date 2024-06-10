@@ -45,6 +45,7 @@ function infer_ancestral(
     alignment_per_node = false,
     node_list = nothing,
     alignment_per_node_name = name -> fasta_from_node_name(name, outfasta),
+    table_style = :short,
 )
     # pre-emptive check of parameters
     if strategy.repetitions>1 && strategy.ML
@@ -91,7 +92,11 @@ function infer_ancestral(
                 node.data.sequence; alphabet = strategy.alphabet
             )
         end |> Dict
-        tab = generate_short_state_table(tree)
+        tab = if table_style == :verbose
+            generate_verbose_state_table(tree, strategy.alphabet)
+        else
+            generate_short_state_table(tree)
+        end
         (iseqs, tab)
     end
     internal_sequences = [x[1] for x in reconstructions]
@@ -150,6 +155,20 @@ function infer_ancestral!(
     model::EvolutionModel,
     strategy::ASRMethod,
 )
+    # Opt branches
+    if strategy.optimize_branch_length && strategy.optimize_branch_scale
+        error(
+            """Got `optimize_branch_length` and `optimize_branch_scale`.
+            Choose one of the two. Tree left unchanged."""
+        )
+    elseif strategy.optimize_branch_length
+        opt_strat = @set strategy.joint=false
+        optimize_branch_length!(tree, model, opt_strat)
+    elseif strategy.optimize_branch_scale
+        opt_strat = @set strategy.joint=false
+        optimize_branch_scale!(tree, model, opt_strat)
+    end
+    # Reconstruction
     pruning_alg!(tree, model, strategy)
     for n in internals(tree), pos in ordering(model)
         n.data.sequence[pos] = n.data.pstates[pos].c

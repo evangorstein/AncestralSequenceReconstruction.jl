@@ -67,7 +67,8 @@ function _mut_codons(codon)
             prod(c)
         end
     end
-    filter(!=(codon), X)
+    # filter(!=(codon), X)
+    return X
 end
 
 const gencode_as_mat = let

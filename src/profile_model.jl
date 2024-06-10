@@ -25,7 +25,7 @@ Ordering is irrelevant in this case, defaults to `1:L`.
         end
         @assert all(p -> length(p) == q, P) "Expected probability vectors of length $q"
         @assert μ>0 "Mutation rate should be strictly positive"
-        @assert !with_code || q == length(AA_ALPHABET) "Can only use genetic_code for amino-acids (got q=$q)"
+        @assert !with_code || q == length(_AA_ALPHABET) "Can only use genetic_code for amino-acids (got q=$q)"
         @assert length(alphabet) == q "Alphabet $alphabet and model (q=$q) must have consistent sizes"
         return new{q}(P, μ, with_code, genetic_code, alphabet)
     end
@@ -73,14 +73,15 @@ Convenience. Sample `arnet` to compute single site frequencies, and return corre
 profile model.
 Use a sample of `M` sequences.
 """
-function ProfileModel(arnet::ArDCA.ArNet; M = 1000, pc=true)
+function ProfileModel(arnet::ArDCA.ArNet; M = 1000, pc=true, kwargs...)
     q = length(arnet.p0)
     S = ArDCA.sample(arnet, M)'
-    return map(eachcol(S)) do X
+    P = map(eachcol(S)) do X
         f = countmap(X)
         Z = sum(values(f)) + (pc ? q : 0)
         [(get(f, a, 0) + (pc ? 1 : 0))/Z for a in 1:q]
-    end |> ASR.ProfileModel
+    end
+    return ProfileModel(P; kwargs...)
 end
 
 

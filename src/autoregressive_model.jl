@@ -7,7 +7,7 @@
     function AutoRegressiveModel{q}(arnet, μ, with_code, genetic_code, alphabet) where q
         @assert length(arnet.p0) == q "Expected arnet with $q states"
         @assert μ>0 "Mutation rate should be strictly positive"
-        @assert !with_code || q == length(AA_ALPHABET) "Can only use genetic_code for amino-acids (got q=$q)"
+        @assert !with_code || q == length(_AA_ALPHABET) "Can only use genetic_code for amino-acids (got q=$q)"
         @assert length(alphabet) == q "Alphabet $alphabet and model (q=$q) must have consistent sizes"
         arnet = deepcopy(arnet)
         regularize_p0!(arnet)
