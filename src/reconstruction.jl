@@ -52,6 +52,8 @@ function infer_ancestral(
         @warn "Asked for more than one repetition with ML strategy. Are you sure?"
     end
 
+    model.with_code && @warn "Using genetic code - Gaps are not well modeled"
+
     if alignment_per_node && isnothing(node_list)
         @warn """Asked for one alignment per node, but no `node_list` kwarg provided.
         Outputting alignment for every internal node in the tree."""
