@@ -31,12 +31,14 @@ end
 dir = dirname(@__FILE__)
 # dir = "basics/"
 
+arnet = JLD2.load(joinpath(dir, "arnet.jld2"))["arnet"] # PF00072
+L = size(arnet.H, 1) + 1
 q = 21
-L = 112
+
 tree = read_tree(joinpath(dir, "tree_long_branches.nwk"); node_data_type = () -> ASR.AState{q}(;L))
 ASR.fasta_to_tree!(tree, joinpath(dir, "alignment_long_branches.fasta"))
 
-arnet = JLD2.load(joinpath(dir, "arnet.jld2"))["arnet"] # PF00072
+
 ar_model = AutoRegressiveModel(arnet)
 x1 = convert(Vector{Int}, tree["A"].data.sequence);
 x2 = convert(Vector{Int}, tree["B"].data.sequence);
