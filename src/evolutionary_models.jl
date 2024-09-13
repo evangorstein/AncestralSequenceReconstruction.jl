@@ -85,6 +85,38 @@ function set_π!(tree::Tree, model::EvolutionModel, pos::Int)
 end
 
 """
+    set_transition_rate_matrix!(Q, π; with_code=false)
+"""
+function set_transition_rate_matrix!(Q, π; with_code=false)
+    return if with_code
+        set_transition_rate_matrix_gencode!(Q, π)
+    else
+        set_transition_rate_matrix_simple!(Q, π)
+    end
+end
+function set_transition_rate_matrix_simple!(Q, π)
+    q = size(Q, 1)
+    for a in 1:q
+        Q[a, :] = π
+        Q[a, a] -= 1
+    end
+    return Q
+end
+function set_transition_rate_matrix_gencode!(Q, π)
+    q = 21
+    @assert q == length(π)
+    for a in 1:q, b in 1:q
+        Q[a,b] = gencode_as_mat[a,b]*π[b]
+    end
+    for a in 1:q
+        Q[a,a] -= sum(Q[a,:])
+    end
+    # normalizing rates
+    # have to do something - but my simple matrix isn't normalized either
+    return Q
+end
+
+"""
     set_transition_matrix!(T::Matrix, t, π; with_code, gen_code)
 
 Set transition matrix with eq. frequencies π in place.
@@ -95,8 +127,8 @@ function set_transition_matrix!(
     with_code=false, gen_code = nothing,
 )
     return if with_code
-        isnothing(gen_code) && error("Must provide genetic code! (`; gen_code = Matrix...)")
-        set_transition_matrix_gencode!(T, t, π, gen_code)
+        # isnothing(gen_code) && error("Must provide genetic code! (`; gen_code = Matrix...)")
+        set_transition_matrix_gencode!(T, t, π)
     else
         set_transition_matrix_simple!(T, t, π)
     end
@@ -105,8 +137,25 @@ function set_transition_matrix!(T::Matrix, t::Missing, π::AbstractVector; kwarg
     return set_transition_matrix!(T, Inf, π; kwargs...)
 end
 
-function set_transition_matrix_gencode!(T, t, π, gen_code)
-    error("Not yet implemented!")
+function set_transition_matrix_gencode!(T, t, π)
+    set_transition_rate_matrix_gencode!(T, π)
+    if t < Inf
+        T .= exp(T*t)
+    else
+        q = size(T, 1)
+        # 1 is gap, on its own for gen code
+        T[1,:] .= 0.
+        T[:, 1] .= 0.
+        T[1,1] = 1.0
+
+        for a in 2:q
+            T[2:end, a] .= π[a]
+        end
+        # normalization not guaranteed with gaps...
+        for a in 1:q
+            T[a, :] ./= sum(T[a,:])
+        end
+    end
     return T
 end
 

@@ -13,7 +13,7 @@ mutable struct BranchWeights{q}
     c :: Vector{Int} # character state
     function BranchWeights{q}(π, u, v, Fu, Fv, lm_up, T, c) where q
         @assert isapprox(sum(π), 1) "Probabilities must sum to one - got $(sum(π))"
-        @assert all(r -> sum(r)≈1, eachrow(T)) "Rows of transition matrix should sum to 1"
+        @assert all(r -> sum(r)≈1, eachrow(T)) "Rows of transition matrix should sum to 1 - Instead $(map(sum, eachrow(T)))"
         @assert length(π) == q "Expected frequency vector of dimension $q, got $π"
         @assert length(u) == q "Expected weights vector of dimension $q, got $u"
         @assert length(v) == q "Expected weights vector of dimension $q, got $v"

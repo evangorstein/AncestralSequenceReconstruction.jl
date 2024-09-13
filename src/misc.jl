@@ -85,14 +85,19 @@ function generate_verbose_state_table(tree::Tree{AState{q}}, alphabet) where q
     L = length(first(nodes(tree)).data.pstates)
     tab = Matrix{Any}(undef, n*L+1, length(header))
     tab[1, :] .= header
+    R(x) = round(x; sigdigits=3)
 
     counter = 0
     for (counter, (pos, node)) in enumerate(Iterators.product(1:L, internals(tree)))
+        site_likelihoods = map(1:L) do i
+            c = node.data.pstates[i].c
+            node.data.pstates[i].posterior[c]
+        end
         tab[counter+1, 1] = label(node)
         tab[counter+1, 2] = pos
         tab[counter+1, 3] = alphabet.string[node.data.pstates[pos].c]
-        tab[counter+1, 4]
-        tab[counter+1, 5:end] .= map(x -> @sprintf("%1.5f", x),node.data.pstates[pos].posterior)
+        tab[counter+1, 4] = @sprintf("%1.4f", mapreduce(R ∘ log, +, site_likelihoods))
+        tab[counter+1, 5:end] .= map(x -> @sprintf("%1.4f", R(x)),node.data.pstates[pos].posterior)
     end
     tab
 end
