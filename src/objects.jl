@@ -319,7 +319,7 @@ end
 @kwdef mutable struct ASRMethod
     joint::Bool = false
     ML::Bool = false
-    alphabet::Alphabet = aa_alphabet
+    # alphabet::Alphabet = aa_alphabet
     verbosity::Int = 0
     optimize_branch_length::Bool = false
     optimize_branch_length_cycles::Int = 3

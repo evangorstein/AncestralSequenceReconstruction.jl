@@ -62,21 +62,21 @@ function infer_ancestral(
 
     # set parameters and build tree of correct type
     L = length(first(leaf_sequences)[2])
-    q = length(strategy.alphabet)
+    q = length(model.alphabet)
     if any(x -> length(x[2]) != L, leaf_sequences)
         error("All sequences must have the same length in $fastafile")
     end
 
     tree = convert(AState{q}, tree)
     foreach(n -> n.data = AState{q}(;L), nodes(tree))
-    sequences_to_tree!(tree, leaf_sequences; alphabet=strategy.alphabet)
+    sequences_to_tree!(tree, leaf_sequences; alphabet=model.alphabet)
     # @info first(leaves(tree)).data
 
     # re-infer branch length
     if strategy.optimize_branch_length && strategy.optimize_branch_scale
         error(
             """Got `optimize_branch_length` and `optimize_branch_scale`.
-            Choose one of the two. Tree left unchanged."""
+            Choose only one of the two. Tree left unchanged."""
         )
     elseif strategy.optimize_branch_length
         opt_strat = @set strategy.joint=false
@@ -91,11 +91,11 @@ function infer_ancestral(
         infer_ancestral!(tree, model, strategy)
         iseqs = map(internals(tree)) do node
             label(node) => intvec_to_sequence(
-                node.data.sequence; alphabet = strategy.alphabet
+                node.data.sequence; alphabet = model.alphabet
             )
         end |> Dict
         tab = if table_style == :verbose
-            generate_verbose_state_table(tree, strategy.alphabet)
+            generate_verbose_state_table(tree, model.alphabet)
         else
             generate_short_state_table(tree)
         end
