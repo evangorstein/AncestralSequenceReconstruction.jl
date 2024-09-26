@@ -45,6 +45,15 @@ function optimize_branch_length(
     return tree
 end
 
+function optimize_branch_length!(tree::Tree, model::AutoRegressiveModel, strat; kwargs...)
+    @warn """
+        Cannot optimize branches of tree using an autoregressive model.
+        Constructing a profile model using the autoregressive, and using it for branch
+        length optimization.
+        """
+    profile_model = ProfileModel(model)
+    return optimize_branch_length!(tree, profile_model, strat; kwargs...)
+end
 
 function optimize_branch_length!(
     tree::Tree{AState{q}}, model::ProfileModel{q}, strategy = ASRMethod(; joint=false);
@@ -94,7 +103,7 @@ end
 Optimize branch lengths to maximize likelihood of sequences at leaves of `tree`.
 """
 function optimize_branch_length(
-    tree, model::ProfileModel, strategy = ASRMethod(; joint=false); kwargs...
+    tree, model::EvolutionModel, strategy = ASRMethod(; joint=false); kwargs...
 )
     tc = copy(tree)
     lk = optimize_branch_length!(tc, model, strategy; kwargs...)
@@ -292,7 +301,6 @@ end
 function optim_wrapper_branch_scale!(μ, grad, params)
     scale_branches!(params.tree, μ[1])
     loglk = tree_likelihood!(params.tree, params.model, params.strategy)
-    # @info (μ=μ, loglk=loglk)
     scale_branches!(params.tree, 1/μ[1])
     # I think I always need this
     if length(grad)>0
@@ -396,7 +404,6 @@ function optimize_branch_length!(node::TreeNode, model::EvolutionModel{q}) where
         ASR.set_transition_matrix!(node.data, model, branch_length(node), i)
     end
     @debug "New lk" ASR.likelihood(node)
-    # update_neighbours!(node; anc=true, sisters=true)
 
 
 

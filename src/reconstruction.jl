@@ -11,19 +11,21 @@
     )
 
 Writing output:
-- if `outnewick` is a `String`, write the tree to the corresponding file.
+- if `outnewick` is a `String`, write the tree to the corresponding file. Default `nothing`.
 - if `outfasta` is a `String`, write the reconstructed internal sequences to the
   corresponding file in Fasta format.
   If it is a `Vector` of `String`, then its length should be equal to
   `strategy.repetitions`, and reconstruction from each repetition will be written to
-  the corresponding file in the vector.
+  the corresponding file in the vector. Default `nothing`.
 - `outtable` is for a table in the style of Iqtree's `.state` file: it contains
-  the posterior distribution of states at each internal node.
-- if `alignment_per_node` is `true`, then one alignment will be written for each internal
-  node in `node_list` (if `nothing`, all internals of the tree). The names of alignments
-  can be set functionally by providing a function, *e.g.*
+  the posterior distribution of states at each internal node. Default `nothing`.
+- `alignment_per_node`: write one alignment for each internal node in `node_list`
+  (if `nothing`, all internals of the tree).
+  The names of alignments can be set functionally by providing a function, *e.g.*
   `alignment_per_node_name(node_name) -> "something.fasta"`.
-  By default, the names are based on the string `outfasta`: `outfasta_node_name.fasta`
+  By default, the names are based on the string `outfasta`: `outfasta_node_name.fasta`.
+  Default `false`.
+- `node_list`: used if `alignment_per_node`. Default `nothing`.
 """
 function infer_ancestral(
     newick_file::AbstractString, fastafile::AbstractString, model, strategy;
@@ -70,7 +72,6 @@ function infer_ancestral(
     tree = convert(AState{q}, tree)
     foreach(n -> n.data = AState{q}(;L), nodes(tree))
     sequences_to_tree!(tree, leaf_sequences; alphabet=model.alphabet)
-    # @info first(leaves(tree)).data
 
     # re-infer branch length
     if strategy.optimize_branch_length && strategy.optimize_branch_scale
@@ -311,7 +312,6 @@ end
 
 function fasta_from_node_name(node_name::AbstractString, base_name::AbstractString)
     bn, ext = splitext(base_name)
-    # ext != ".fasta" && @warn "Got alignment file with extension $ext instead of `.fasta`."
     isempty(ext) && (ext = ".fasta")
     return prod([bn, "_", node_name, ext])
 end

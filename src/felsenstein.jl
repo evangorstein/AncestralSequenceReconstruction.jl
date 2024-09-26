@@ -312,7 +312,7 @@ function pick_ML_state!(p::PosState{q}) where q
 end
 
 function pick_ML_state_joint!(p::PosState{q}) where q
-    @warn "Not sure this function is working ... should take ancestral state into account"
+    @warn "Joint reconstruction probably wrong: should take ancestral state into account (if testing: warning is normal)"
     # error("ML + joint not implemented yet (have to fix bug) -- change strategy")
     XY = [(x,y) for x in 1:q for y in 1:q]
     lk, idx = findmax(XY) do (x,y)

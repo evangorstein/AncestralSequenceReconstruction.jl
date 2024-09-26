@@ -44,7 +44,10 @@ function BRANCH_UPR_BOUND(L; style = :bayes)
 end
 
 
-############################################################################################
+#==========================================#
+############### Genetic code ###############
+#==========================================#
+
 
 const aa_order = ['K', 'N', 'K', 'N', 'T', 'T', 'T', 'T', 'R', 'S', 'R', 'S', 'I', 'I', 'M', 'I', 'Q', 'H', 'Q', 'H', 'P', 'P', 'P', 'P', 'R', 'R', 'R', 'R', 'L', 'L', 'L', 'L', 'E', 'D', 'E', 'D', 'A', 'A', 'A', 'A', 'G', 'G', 'G', 'G', 'V', 'V', 'V', 'V', '*', 'Y', '*', 'Y', 'S', 'S', 'S', 'S', '*', 'C', 'W', 'C', 'L', 'F', 'L', 'F']
 const nt_order = ['A', 'C', 'G', 'T']
@@ -67,7 +70,6 @@ function _mut_codons(codon)
             prod(c)
         end
     end
-    # filter(!=(codon), X)
     return X
 end
 
@@ -82,14 +84,12 @@ const gencode_as_mat = let
         else
             continue
         end
-        # @info alphabet.string[row] codon
         for mut_codon in _mut_codons(codon)
             col = if haskey(alphabet.mapping, gencode_as_dict[mut_codon])
                 alphabet.mapping[gencode_as_dict[mut_codon]]
             else
                 continue
             end
-            # @info "--> $(alphabet.string[col]) / $(mut_codon)"
             R[row, col] += 1
         end
     end
@@ -97,5 +97,4 @@ const gencode_as_mat = let
         R[a,a] = 0
     end
     R ./ mean(R)
-    # R
 end

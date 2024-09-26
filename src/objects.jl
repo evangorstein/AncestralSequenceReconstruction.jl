@@ -258,6 +258,14 @@ Base.convert(::Type{Alphabet}, x::Symbol) = Alphabet(x)
 Base.length(a::Alphabet) = length(a.string)
 
 # Default alphabet for given size q
+"""
+    default_alphabet(q::Int)
+
+Pick an `Alphabet` based on the value of `a`:
+- `21` --> `ASR.aa_alphabet`
+- `4` --> `ASR.nt_alphabet`
+- `2` --> `ASR.spin_alphabet`
+"""
 function default_alphabet(q::Int)
     return if q == 21
         aa_alphabet
@@ -302,11 +310,14 @@ end
 """
     ASRMethod
 
-- `joint::Bool`: joint or marginal inference. Default `false`.
-- `ML::Bool`: maximum likelihood, or sampling. Default `false`.
-- `verbosity :: Int`: verbosity level. Default 0.
-- `optimize_branch_length`: Optimize the branch lengths of the tree according to the model.
+- `joint::Bool`: joint or marginal inference. Default `false` (joint inference not working yet).
+- `ML::Bool`: maximum likelihood or bayesian. Default `false` (*i.e.* ML).
+- `verbosity :: Int`: verbosity level. Unless you're debugging something, `<=2` Default `0`.
+- `optimize_branch_length`: optimize the branch lengths of the tree according to the model.
   Default `false`.
+- `optimize_branch_scale`: optimally scale the branches of the input tree, keeping their
+  relative lengths fixed. Incompatible with `optimize_branch_length`. Default `false`.
+- `optimize_branch_length_cycles`: number of optimization cycles (see Felsenetein's book). Default `3`.
 - `repetitions :: Int`: Number of repetitions for the reconstruction.
   Should be set to 1 for the ML reconstruction.
   For Bayesian reconstruction (*i.e.* `ML=false`), this allows for sampling of likely
