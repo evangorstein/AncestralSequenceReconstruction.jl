@@ -88,7 +88,11 @@ function infer_ancestral(
 
     # reconstruct
     reconstructions = map(1:strategy.repetitions) do _
-        infer_ancestral!(tree, model, strategy)
+        # branch length optimization already performed before - do not repeat it
+        strat = @set strategy.optimize_branch_length = false
+        strat = @set strat.optimize_branch_scale = false
+
+        infer_ancestral!(tree, model, strat)
         iseqs = map(internals(tree)) do node
             label(node) => intvec_to_sequence(
                 node.data.sequence; alphabet = model.alphabet
