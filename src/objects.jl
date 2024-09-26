@@ -304,7 +304,6 @@ end
 
 - `joint::Bool`: joint or marginal inference. Default `false`.
 - `ML::Bool`: maximum likelihood, or sampling. Default `false`.
-- `alphabet :: ASR.Alphabet`: alphabet used to map from integers to sequences. Default `:aa`.
 - `verbosity :: Int`: verbosity level. Default 0.
 - `optimize_branch_length`: Optimize the branch lengths of the tree according to the model.
   Default `false`.
@@ -319,7 +318,6 @@ end
 @kwdef mutable struct ASRMethod
     joint::Bool = false
     ML::Bool = false
-    alphabet::Alphabet = aa_alphabet
     verbosity::Int = 0
     optimize_branch_length::Bool = false
     optimize_branch_length_cycles::Int = 3
