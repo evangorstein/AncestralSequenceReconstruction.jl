@@ -83,6 +83,7 @@ function ProfileModel(arnet::ArDCA.ArNet; M = 1000, pc=true, kwargs...)
     end
     return ProfileModel(P; kwargs...)
 end
+ProfileModel(model::AutoRegressiveModel; kwargs...) = ProfileModel(model.arnet; kwargs...)
 
 
 function change_alphabet(model::ProfileModel, alphabet::Alphabet)
