@@ -15,3 +15,4 @@ docs/site/
 example/PF00014/utils.jl
 
 tmp/*
+example/*/tmp/*
