@@ -199,7 +199,17 @@ end
 #######################################################################################
 
 
+#=
+Defining a new alphabet:
+- define the mapping string (like _AA_ALPHABET)
+- define the alphabet from the string (like const aa_alphabet = ...)
+- define the symbol names for the alphabet
+- update the function Alphabet(::Symbol)
+- if relevant, update default_alphabet(::Int)
+=#
+
 const _AA_ALPHABET = "-ACDEFGHIKLMNPQRSTVWY"
+const _ALTERNATIVE_AA_ALPHABET = "ACDEFGHIKLMNPQRSTVWY-"
 const _NT_ALPHABET_NOGAP = "ACGT"
 const _SPIN_ALPHABET = "01"
 
@@ -234,6 +244,9 @@ reverse_mapping(A::Alphabet) = Dict(i => c for (c,i) in A.mapping)
 const aa_alphabet = Alphabet(_AA_ALPHABET)
 const aa_alphabet_names = (:aa, :AA, :aminoacids, :amino_acids)
 
+const alternative_aa_alphabet = Alphabet(_ALTERNATIVE_AA_ALPHABET)
+const alternative_aa_alphabet_names = (:ardca_aa, :aa_ardca, :alternative_aa)
+
 const nt_alphabet = Alphabet(_NT_ALPHABET_NOGAP)
 const nt_alphabet_names = (:nt, :nucleotide, :dna)
 
@@ -244,6 +257,8 @@ const sping_alphabet_names = (:spin,)
 function Alphabet(alphabet::Symbol)
     return if alphabet in aa_alphabet_names
         aa_alphabet
+    elseif alphabet in alternative_aa_alphabet_names
+        alternative_aa_alphabet
     elseif alphabet in nt_alphabet_names
         nt_alphabet
     elseif alphabet in sping_alphabet_names

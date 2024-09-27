@@ -5,6 +5,7 @@
     genetic_code :: Matrix{Float64} = zeros(Float64, q, q)
     alphabet :: Alphabet = default_alphabet(q)
     function AutoRegressiveModel{q}(arnet, μ, with_code, genetic_code, alphabet) where q
+        alphabet = Alphabet(alphabet) # in case a symbol or a string was passed
         @assert length(arnet.p0) == q "Expected arnet with $q states"
         @assert μ>0 "Mutation rate should be strictly positive"
         @assert !with_code || q == length(_AA_ALPHABET) "Can only use genetic_code for amino-acids (got q=$q)"
@@ -33,8 +34,6 @@ end
 length(model::AutoRegressiveModel) = length(model.arnet.H) + 1
 
 ordering(model::AutoRegressiveModel) = model.arnet.idxperm
-
-
 
 #=
 ########## set_π ##########
