@@ -6,13 +6,12 @@ using InteractiveUtils
 
 # ╔═╡ 650e35ce-7bf8-11ef-3388-b19ac2abf7c1
 begin
-	using Revise
-	using Pkg; 
+	using Pkg
 	Pkg.activate("../../") # assumes this is in examples/PF00014/reconstruction
-	using AncestralSequenceReconstruction
+	using AncestralSequenceReconstruction # core package
 	using FASTX # for writing reconstruction to fasta 
 	using JLD2 # used to load ArDCA models
-	using PlutoUI # for toc
+	using PlutoUI # for ToC
 	using TreeTools # to handle phylogenetic trees
 end
 
@@ -26,7 +25,7 @@ md"## Evolutionary model"
 md"""
 Constructing the autoregressive evolutionary model is done in two steps. 
 1. Load the ArDCA model from a `.jld2` file. Alternatively, one can infer the model directly from an alignment using the `ArDCA.jl` package. 
-2. Convert the model, which is an `ArDCA.ArNet` object, to an 	`AncestralSequenceReconstruction.AutoRegressiveModel` object
+2. Convert the model, which is an `ArDCA.ArNet` object, to an 	`AncestralSequenceReconstruction.AutoRegressiveModel` object. This is essentially a wrapper around the autoregressive model. 
 """
 
 # ╔═╡ 0ed03189-e872-43de-a800-ba6b62550fde
