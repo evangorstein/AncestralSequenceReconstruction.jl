@@ -6,13 +6,12 @@ using InteractiveUtils
 
 # ╔═╡ 650e35ce-7bf8-11ef-3388-b19ac2abf7c1
 begin
-	using Revise
-	using Pkg; 
+	using Pkg
 	Pkg.activate("../../") # assumes this is in examples/PF00014/reconstruction
-	using AncestralSequenceReconstruction
+	using AncestralSequenceReconstruction # core package
 	using FASTX # for writing reconstruction to fasta 
 	using JLD2 # used to load ArDCA models
-	using PlutoUI # for toc
+	using PlutoUI # for ToC
 	using TreeTools # to handle phylogenetic trees
 end
 
@@ -26,7 +25,7 @@ md"## Evolutionary model"
 md"""
 Constructing the autoregressive evolutionary model is done in two steps. 
 1. Load the ArDCA model from a `.jld2` file. Alternatively, one can infer the model directly from an alignment using the `ArDCA.jl` package. 
-2. Convert the model, which is an `ArDCA.ArNet` object, to an 	`AncestralSequenceReconstruction.AutoRegressiveModel` object
+2. Convert the model, which is an `ArDCA.ArNet` object, to an 	`AncestralSequenceReconstruction.AutoRegressiveModel` object. This is essentially a wrapper around the autoregressive model. 
 """
 
 # ╔═╡ 0ed03189-e872-43de-a800-ba6b62550fde
@@ -52,11 +51,13 @@ md"## Tree and alignment"
 # ╔═╡ 5a4dae4b-bb59-41f2-8716-0225076bf338
 md"We will directly provide the files to the `infer_ancestral` function"
 
-# ╔═╡ 7eb1d358-b970-41ef-8c07-37f4c5ebc096
-tree_file = "tree_iqtree.nwk"
-
 # ╔═╡ 18924fe6-639e-4578-b0d1-a0c4c93d04fe
+# 10 sequences taken from the PF00014 family (trypsin inhibitor)
 fasta_file = "PF00014_mgap6_subalignment.fasta"
+
+# ╔═╡ 7eb1d358-b970-41ef-8c07-37f4c5ebc096
+# the tree was inferred using iqtree, and then midpoint-rooted
+tree_file = "tree_iqtree.nwk"
 
 # ╔═╡ 07652358-cef7-49cf-bac9-0a1c68e247de
 md"## Reconstruction options: `ASRMethod`"
@@ -233,8 +234,8 @@ md"If only a subset of internal nodes are of interest, their names can be provid
 # ╟─42f9abc0-a6c2-40f2-9a0e-92ad9ddeae40
 # ╟─b0737a58-5e84-4853-b04c-795c3b9ff719
 # ╟─5a4dae4b-bb59-41f2-8716-0225076bf338
-# ╠═7eb1d358-b970-41ef-8c07-37f4c5ebc096
 # ╠═18924fe6-639e-4578-b0d1-a0c4c93d04fe
+# ╠═7eb1d358-b970-41ef-8c07-37f4c5ebc096
 # ╟─07652358-cef7-49cf-bac9-0a1c68e247de
 # ╟─304c7f8a-1bd9-4821-96c9-62e2fa87c726
 # ╠═0b53e764-0f4e-47f0-a30f-14c65451e4bd
@@ -266,6 +267,6 @@ md"If only a subset of internal nodes are of interest, their names can be provid
 # ╠═e717ff93-ed39-49d2-a305-71272f351612
 # ╠═f3851ef5-ce50-4670-a1fe-04a9cbcdfeae
 # ╠═db546de4-bb24-430d-9d11-868fe4f71032
-# ╠═47af8f46-958d-4974-b578-8782ece03c1a
+# ╟─47af8f46-958d-4974-b578-8782ece03c1a
 # ╠═2be814ba-6700-4ab9-a9c3-75f9191ca005
 # ╟─efcffbef-7285-4156-b85d-aff1ea39924a
