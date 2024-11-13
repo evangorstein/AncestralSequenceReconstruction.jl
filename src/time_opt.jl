@@ -18,6 +18,7 @@ function optimize_branch_length(
     model::EvolutionModel{q},
     strategy = ASRMethod(; joint=false);
     outnewick=nothing,
+    kwargs...
 ) where q
     # read sequences
     seqmap = FASTAReader(open(fastafile, "r")) do reader
@@ -35,7 +36,7 @@ function optimize_branch_length(
 
     # re-infer branch lengths
     opt_strat = @set strategy.joint=false
-    optimize_branch_length!(tree, model, opt_strat)
+    optimize_branch_length!(tree, model, opt_strat; kwargs...)
 
     # write output if needed
     if !isnothing(outnewick)
@@ -114,7 +115,7 @@ end
 
 function optimize_branch_lengths_cycle!(
     tree::Tree,
-    model::EvolutionModel{q},
+    model::ProfileModel{q},
     strategy = ASRMethod(; joint=false)
 ) where q
     # global opt parameters
@@ -130,7 +131,7 @@ function optimize_branch_lengths_cycle!(
     )
     # optimizer
     lw_bound = BRANCH_LWR_BOUND(L; style=:ml)
-    up_bound = BRANCH_UPR_BOUND(L)
+    up_bound = BRANCH_UPR_BOUND(model; style=:bayes)
     epsconv = 1e-2
     maxit = 100
 
@@ -145,7 +146,7 @@ function optimize_branch_lengths_cycle!(
 
 
     # cycle through nodes
-    for n in Iterators.filter(!isroot, POT(tree.root))
+    for n in Iterators.filter(!isroot, POT(tree))
         # set best branch length for n
         @debug "\n---- Opt. branch length node $(label(n)) ----"
         @debug "Previous lk" ASR.likelihood(n, strategy)
@@ -158,13 +159,14 @@ function optimize_branch_lengths_cycle!(
                 n.data, model, branch_length(n), i; set_equilibrium_frequencies=false
             )
         end
+        pruning_alg!(tree, model, strategy; set_state=false)
         @debug "New lk" ASR.likelihood(n, strategy)
         @debug "New branch length $(branch_length(n))"
         @debug "Branch length bounds $(lw_bound) < $(up_bound)"
-        pruning_alg!(tree, model, strategy; set_state=false)
 
         @debug "Ancestor $(label(ancestor(n))) lk" ASR.likelihood(ancestor(n), strategy)
     end
+
 
     return nothing
 end
@@ -263,7 +265,7 @@ function optimize_branch_scale(
     return tree
 end
 
-function optimize_branch_scale!(tree::Tree, model::ProfileModel, strategy)
+function optimize_branch_scale!(tree::Tree, model::EvolutionModel, strategy)
     set_verbose(strategy.verbosity)
 
     # parameters
@@ -285,7 +287,9 @@ function optimize_branch_scale!(tree::Tree, model::ProfileModel, strategy)
     max_objective!(opt, (μ, g) -> optim_wrapper_branch_scale!(μ, g, params))
     μ0 = Float64[1]
 
-    verbose() > 0 && @info "Finding optimal scaling for branch length"
+    verbose() > 0 && @info """
+        Finding optimal scaling for branch length using model of type $(typeof(model))
+        """
     verbose() > 1 && @info "Initial tree likelihood $(tree_likelihood!(tree, model, params.strategy))"
     result = optimize(opt, μ0)
     if !in(result[3], [:SUCCESS, :STOPVAL_REACHED, :FTOL_REACHED, :XTOL_REACHED])
@@ -416,3 +420,39 @@ end
 
 
 
+#========================#
+######### Bounds #########
+#========================#
+
+# using the idea (1 - e(-t)) ∼ (n+1) / (L+2) (fraction of mutated sites, with a pc.)
+# for n = L and n = 0 we get the limits below
+BRANCH_LWR_BOUND_BAYES(L) = log(L+2) - log(L+1)
+BRANCH_UPR_BOUND_BAYES(L) = log(L+2) * 0.75 # this over-estimates since saturation occurs before -- would need to put long term eq. of model
+
+function BRANCH_UPR_BOUND_BAYES(profile::ProfileModel)
+    L = length(profile)
+    H_inf = sum(x -> x^2, Iterators.flatten(profile.P))
+    return log(H_inf+2)*0.75
+end
+
+BRANCH_LWR_BOUND_ML(L) = 0
+BRANCH_UPR_BOUND_ML(L) = Inf
+
+function BRANCH_LWR_BOUND(L; style = :ML)
+    return if style == :bayes
+        BRANCH_LWR_BOUND_BAYES(L)
+    elseif style == :ml || style == :ML
+        BRANCH_LWR_BOUND_ML(L)
+    else
+        error("Unknown style $style")
+    end
+end
+function BRANCH_UPR_BOUND(L; style = :bayes)
+    return if style == :bayes
+        BRANCH_UPR_BOUND_BAYES(L)
+    elseif style == :ml || style == :ML
+        BRANCH_UPR_BOUND_ML(L)
+    else
+        error("Unknown style $style")
+    end
+end

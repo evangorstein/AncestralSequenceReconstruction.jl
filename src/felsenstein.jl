@@ -93,7 +93,7 @@ end
 function log_message_up_sum(
     node::PosState{q}, lk_factor,
 ) where q
-    mul!(lk_factor, node.weights.T, node.weights.v)
+    mul!(lk_factor, node.weights.T, node.weights.v) # overwrites lk_factor
     return log.(lk_factor) .+ node.weights.Fv[]
 end
 

@@ -85,6 +85,43 @@ function ProfileModel(arnet::ArDCA.ArNet; M = 1000, pc=true, kwargs...)
 end
 ProfileModel(model::AutoRegressiveModel; kwargs...) = ProfileModel(model.arnet; kwargs...)
 
+"""
+    ProfileModel(fastafile::AbstractString; pc=1e-2, alphabet=:aa)
+"""
+function ProfileModel(
+    fastafile::AbstractString;
+    pc=1e-2, alphabet=:aa, reweighting=false, θ=0.2,
+)
+    sequences = FASTAReader(open(fastafile, "r")) do reader
+        map(sequence_to_intvec∘sequence, reader)
+        # mapreduce(rec -> sequence_to_intvec(sequence(rec); alphabet)', vcat, reader)
+    end
+    L, M, q = length(first(sequences)), length(sequences), length(Alphabet(alphabet))
+    weights = if reweighting
+        W = zeros(Float64, length(sequences))
+        for (m, seq) in enumerate(sequences), seq2 in sequences
+            if _hamming(seq, seq2)/L <= θ
+                W[m] += 1.
+            end
+        end
+        1 ./ W
+    else
+        ones(Float64, length(sequences))
+    end
+    Meff = sum(weights)
+    @info Meff
+    P = map(1:L) do i
+        p = zeros(Float64, q)
+        for (m, seq) in enumerate(sequences)
+            a = seq[i]
+            p[a] += weights[m]
+        end
+        p /= Meff
+        p = (1-pc)*p .+ pc/q
+    end
+    return ProfileModel(P; alphabet)
+end
+_hamming(X, Y) = sum(z -> z[1] == z[2] ? 0 : 1, zip(X, Y))
 
 function change_alphabet(model::ProfileModel, alphabet::Alphabet)
     Q = map(model.P) do p
